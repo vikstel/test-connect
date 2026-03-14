@@ -291,6 +291,7 @@ const PLATFORMS = {
     color: "#4a76a8",
     oauthFlow: true,
     fields: [
+      { key: "access_token", label: "Access Token (или получить через OAuth ниже)", placeholder: "vk1.a.xxxxx" },
       { key: "target_id", label: "ID группы/паблика (куда постить)", placeholder: "-123456789" },
     ],
     instruction: `
@@ -536,8 +537,10 @@ async function saveConnect() {
   const data = {};
   for (const f of p.fields) {
     const val = document.getElementById(`field-${f.key}`)?.value?.trim();
-    if (!val) { showToast('Заполните все поля', 'error'); return; }
-    data[f.key] = val;
+    if (!val && !(p.oauthFlow && f.key === 'access_token')) {
+      showToast('Заполните все поля', 'error'); return;
+    }
+    if (val) data[f.key] = val;
   }
 
   const res = await fetch(`/api/connect/${currentPlatform}`, {
@@ -548,7 +551,7 @@ async function saveConnect() {
   const json = await res.json();
   if (!json.ok) { showToast('Ошибка сохранения', 'error'); return; }
 
-  if (p.oauthFlow) {
+  if (p.oauthFlow && !data.access_token) {
     window.location.href = `/oauth/${currentPlatform}`;
   } else {
     closeModal('connectModal');
