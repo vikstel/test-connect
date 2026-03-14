@@ -41,7 +41,7 @@ class VKPoster(BasePlatform):
             if media_path and media_type == "photo":
                 server_resp = self._call("photos.getWallUploadServer", group_id=abs(self.owner_id))
                 if "error" in server_resp:
-                    return {"ok": False, "message": server_resp["error"]["error_msg"]}
+                    return {"ok": False, "message": f"getWallUploadServer: {server_resp['error']['error_msg']}"}
                 upload_url = server_resp["response"]["upload_url"]
 
                 with open(media_path, "rb") as f:
@@ -54,7 +54,7 @@ class VKPoster(BasePlatform):
                     hash=uploaded["hash"],
                 )
                 if "error" in save_resp:
-                    return {"ok": False, "message": save_resp["error"]["error_msg"]}
+                    return {"ok": False, "message": f"saveWallPhoto: {save_resp['error']['error_msg']}"}
                 p = save_resp["response"][0]
                 attachments.append(f"photo{p['owner_id']}_{p['id']}")
 
