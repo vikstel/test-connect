@@ -1,0 +1,30 @@
+# Secrets
+.env
+credentials.json
+
+# Runtime data
+uploads/
+zen_posts.json
+schedule.json
+static/rss.xml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Tools
+.playwright-mcp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store

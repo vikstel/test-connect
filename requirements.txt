@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-telegram-bot>=21
+vk_api
+tweepy
+requests
+python-dotenv
+apscheduler
+feedgen
