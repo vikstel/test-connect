@@ -289,20 +289,22 @@ const PLATFORMS = {
     name: "VKontakte",
     icon: "🔵",
     color: "#4a76a8",
+    oauthFlow: true,
     fields: [
-      { key: "access_token", label: "Access Token", placeholder: "vk1.a.xxxxx" },
-      { key: "owner_id", label: "Owner ID (группы)", placeholder: "-123456789" },
+      { key: "target_id", label: "ID группы/паблика (куда постить)", placeholder: "-123456789" },
     ],
     instruction: `
-      <strong>Как получить Access Token и зарегистрировать приложение:</strong>
+      <strong>Как получить ключи:</strong>
       <ol>
-        <li>Войти через <a href="https://bid.vk.com/" target="_blank">VK Бизнес ID</a></li>
-        <li>Перейти в кабинет сервиса авторизации: <a href="https://id.vk.ru/about/business/go/" target="_blank">id.vk.ru/about/business/go</a></li>
-        <li>Мои приложения → Добавить приложение → выбрать платформу <strong>Web</strong></li>
-        <li>После создания в разделе <strong>Информация о приложении</strong> будет <strong>Сервисный ключ доступа</strong></li>
+        <li>Создать приложение: <a href="https://id.vk.com/about/business/go/accounts" target="_blank">id.vk.com → Мои приложения</a> → тип <strong>Standalone</strong></li>
+        <li><strong>App ID</strong> — в URL страницы настроек приложения</li>
+        <li><strong>Защищённый ключ</strong> — в разделе «Ключи доступа» настроек приложения</li>
+        <li>В настройках добавить Доверенный Redirect URL: <code>http://localhost/oauth/vk/callback</code></li>
       </ol>
       <br>
-      <strong>Owner ID:</strong> отрицательное число для группы/паблика (например <code>-123456789</code>)
+      <strong>ID группы/паблика:</strong> отрицательное число. Найти: открыть группу → в URL <code>club123456</code> → ID = <code>-123456</code>
+      <br><br>
+      После сохранения нажмите <strong>«Войти через VK»</strong> — вас перенаправит на страницу авторизации VK.
     `
   },
   ok: {
@@ -428,6 +430,14 @@ let statuses = {};
 
 // Init
 async function init() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('vk_connected')) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => showToast('VK успешно подключён!', 'ok'), 300);
+  } else if (params.get('vk_error')) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => showToast('Ошибка подключения VK: ' + params.get('vk_error'), 'error'), 300);
+  }
   renderPlatformGrid();
   renderCheckboxes();
   await loadStatuses();
@@ -511,6 +521,9 @@ function openConnect(platform) {
     </div>
   `).join('');
 
+  const saveBtn = document.querySelector('#connectModal .modal-actions .btn-primary');
+  saveBtn.textContent = p.oauthFlow ? '🔗 Сохранить и войти через VK' : 'Сохранить';
+
   document.getElementById('connectModal').classList.add('active');
 }
 
@@ -533,10 +546,14 @@ async function saveConnect() {
     body: JSON.stringify(data)
   });
   const json = await res.json();
-  if (json.ok) {
+  if (!json.ok) { showToast('Ошибка сохранения', 'error'); return; }
+
+  if (p.oauthFlow) {
+    window.location.href = `/oauth/${currentPlatform}`;
+  } else {
     closeModal('connectModal');
     updateStatusBadge(currentPlatform, 'configured');
-    showToast(`${PLATFORMS[currentPlatform].name} сохранён`, 'ok');
+    showToast(`${p.name} сохранён`, 'ok');
     await loadStatuses();
   }
 }

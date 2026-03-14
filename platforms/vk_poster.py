@@ -3,10 +3,10 @@ from .base import BasePlatform
 
 
 class VKPoster(BasePlatform):
-    def __init__(self, access_token: str, owner_id: str):
+    def __init__(self, access_token: str, target_id: str, app_id: str = None, client_secret: str = None):
         self.session = vk_api.VkApi(token=access_token)
         self.vk = self.session.get_api()
-        self.owner_id = int(owner_id)
+        self.owner_id = int(target_id)
 
     def test_connection(self) -> dict:
         try:

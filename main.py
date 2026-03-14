@@ -1,9 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from typing import List, Optional
 import uuid
 import shutil
+import requests as http_requests
 from pathlib import Path
 from datetime import datetime
 
@@ -131,6 +132,66 @@ def get_jobs():
 def delete_job(job_id: str):
     from scheduler import cancel_job
     return {"ok": cancel_job(job_id)}
+
+
+VK_REDIRECT_URI = "http://localhost/oauth/vk/callback"
+VK_SCOPE = "wall,photos,video,offline"
+
+
+@app.get("/oauth/vk")
+def vk_oauth_start():
+    from config import load_credentials
+    load_credentials()
+    import os
+    app_id = os.getenv("VK_APP_ID")
+    if not app_id:
+        return JSONResponse({"error": "VK_APP_ID не найден в .env"}, status_code=400)
+    url = (
+        f"https://oauth.vk.com/authorize"
+        f"?client_id={app_id}"
+        f"&display=page"
+        f"&redirect_uri={VK_REDIRECT_URI}"
+        f"&scope={VK_SCOPE}"
+        f"&response_type=token"
+        f"&v=5.199"
+    )
+    return RedirectResponse(url)
+
+
+@app.get("/oauth/vk/callback")
+def vk_oauth_callback():
+    # Token arrives in URL fragment (#access_token=...) — handled by JS on this page
+    html = """<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>VK Auth</title></head>
+<body>
+<script>
+  const hash = location.hash.substring(1);
+  const params = Object.fromEntries(new URLSearchParams(hash));
+  if (params.access_token) {
+    fetch('/api/vk/save_token', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({access_token: params.access_token})
+    }).then(() => { window.location.href = '/?vk_connected=1'; });
+  } else {
+    const err = params.error_description || params.error || 'unknown';
+    window.location.href = '/?vk_error=' + encodeURIComponent(err);
+  }
+</script>
+<p>Авторизация VK...</p>
+</body></html>"""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(html)
+
+
+@app.post("/api/vk/save_token")
+async def vk_save_token(request: Request):
+    data = await request.json()
+    token = data.get("access_token")
+    if not token:
+        return {"ok": False}
+    save_platform("vk", {"access_token": token})
+    return {"ok": True}
 
 
 if __name__ == "__main__":

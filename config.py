@@ -13,7 +13,7 @@ PLATFORM_ENV_KEYS = {
     },
     "vk": {
         "access_token": "VK_ACCESS_TOKEN",
-        "owner_id": "VK_OWNER_ID",
+        "target_id": "VK_TARGET_ID",
     },
     "ok": {
         "access_token": "OK_ACCESS_TOKEN",

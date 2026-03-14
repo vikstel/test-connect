@@ -259,10 +259,30 @@ class TelegramPoster(BasePlatform):
 
 ## Шаг 4 — VK
 
-**Форма подключения:**
-- `Access Token` (user token с правами wall)
-- `Owner ID` (отрицательное число для группы, например `-123456789`)
-- Инструкция со ссылкой на VK ID / Implicit Flow
+**Приложение создаётся на:** https://id.vk.com/about/business/go/accounts — тип Standalone.
+
+**Переменные окружения:**
+- `VK_APP_ID` — ID приложения (из URL настроек)
+- `VK_CLIENT_SECRET` — Защищённый ключ из настроек приложения
+- `VK_ACCESS_TOKEN` — токен пользователя (получается через OAuth flow)
+- `VK_TARGET_ID` — ID группы/паблика куда постить (отрицательное число, например `-123456789`)
+
+**OAuth flow:**
+1. В настройках приложения: Доверенный Redirect URL → `http://localhost/oauth/vk/callback`
+2. Приложение запускается на порту 80 (`sudo python run.py`)
+3. Пользователь нажимает «Подключить VK» → редирект на VK auth → VK возвращает `code`
+4. `GET /oauth/vk/callback?code=...` → меняем code на access_token → сохраняем в `.env`
+
+**OAuth роуты в `main.py`:**
+```
+GET /oauth/vk          → редирект на https://oauth.vk.com/authorize?...&scope=wall,photos,offline
+GET /oauth/vk/callback → принимает code, меняет на token через https://oauth.vk.com/access_token
+```
+
+**Форма подключения (в модалке UI):**
+- Кнопка «Подключить через VK» (запускает OAuth)
+- `ID группы/паблика` — куда постить (например `-123456789` для группы)
+- Инструкция: «ID группы — отрицательное число. Найти: открыть страницу группы → в URL club123456 → ID = -123456»
 
 **Файл `platforms/vk_poster.py`:**
 ```python
@@ -270,10 +290,10 @@ import vk_api
 from .base import BasePlatform
 
 class VKPoster(BasePlatform):
-    def __init__(self, access_token: str, owner_id: str):
+    def __init__(self, access_token: str, target_id: str, app_id: str = None, client_secret: str = None):
         self.session = vk_api.VkApi(token=access_token)
         self.vk = self.session.get_api()
-        self.owner_id = int(owner_id)
+        self.owner_id = int(target_id)
 
     def test_connection(self) -> dict:
         try:
@@ -785,8 +805,8 @@ def delete_job(job_id: str):
 
 ### Чеклист:
 
-- [ ] `uvicorn main:app --reload` — сервер стартует без ошибок
-- [ ] Открыть `http://localhost:8000` — UI отображается
+- [ ] `sudo python run.py` — сервер стартует без ошибок на порту 80
+- [ ] Открыть `http://localhost` — UI отображается
 - [ ] `/api/status` — возвращает `not_configured` для всех
 - [ ] Подключить Telegram → `/api/test/telegram` → `{"ok": true}`
 - [ ] Опубликовать в Telegram через UI — сообщение пришло
