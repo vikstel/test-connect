@@ -1,23 +1,33 @@
-import vk_api
+import requests
 from .base import BasePlatform
+
+VK_API = "https://api.vk.com/method"
+VK_V = "5.199"
 
 
 class VKPoster(BasePlatform):
-    def __init__(self, access_token: str, target_id: str, app_id: str = None, client_secret: str = None):
-        self.session = vk_api.VkApi(token=access_token)
-        self.vk = self.session.get_api()
+    def __init__(self, access_token: str, target_id: str, **kwargs):
+        self.token = access_token
         self.owner_id = int(target_id)
+
+    def _call(self, method: str, **params) -> dict:
+        params.update({"access_token": self.token, "v": VK_V})
+        r = requests.post(f"{VK_API}/{method}", data=params)
+        return r.json()
 
     def test_connection(self) -> dict:
         try:
-            info = self.vk.users.get()
-            if info:
-                user = info[0]
-                return {"ok": True, "message": f"Подключён как {user['first_name']} {user['last_name']}"}
-            # Group token — check via groups API
-            group_info = self.vk.groups.getById(group_id=abs(self.owner_id))
-            group = group_info[0]
-            return {"ok": True, "message": f"Подключён как группа «{group['name']}»"}
+            data = self._call("users.get")
+            if "response" in data and data["response"]:
+                u = data["response"][0]
+                return {"ok": True, "message": f"Подключён как {u['first_name']} {u['last_name']}"}
+            # Group token — check group info
+            data = self._call("groups.getById", group_id=abs(self.owner_id))
+            if "response" in data and data["response"]:
+                g = data["response"][0]
+                return {"ok": True, "message": f"Группа «{g['name']}»"}
+            err = data.get("error", {}).get("error_msg", "Неизвестная ошибка")
+            return {"ok": False, "message": err}
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
@@ -25,14 +35,32 @@ class VKPoster(BasePlatform):
         try:
             attachments = []
             if media_path and media_type == "photo":
-                upload = vk_api.VkUpload(self.session)
-                photo = upload.photo_wall(media_path, group_id=abs(self.owner_id))
-                p = photo[0]
+                server_resp = self._call("photos.getWallUploadServer", group_id=abs(self.owner_id))
+                if "error" in server_resp:
+                    return {"ok": False, "message": server_resp["error"]["error_msg"]}
+                upload_url = server_resp["response"]["upload_url"]
+
+                with open(media_path, "rb") as f:
+                    uploaded = requests.post(upload_url, files={"photo": f}).json()
+
+                save_resp = self._call("photos.saveWallPhoto",
+                    group_id=abs(self.owner_id),
+                    photo=uploaded["photo"],
+                    server=uploaded["server"],
+                    hash=uploaded["hash"],
+                )
+                if "error" in save_resp:
+                    return {"ok": False, "message": save_resp["error"]["error_msg"]}
+                p = save_resp["response"][0]
                 attachments.append(f"photo{p['owner_id']}_{p['id']}")
+
             params = dict(owner_id=self.owner_id, message=text, attachments=",".join(attachments))
             if self.owner_id < 0:
                 params["from_group"] = 1
-            result = self.vk.wall.post(**params)
-            return {"ok": True, "post_id": str(result["post_id"])}
+
+            result = self._call("wall.post", **params)
+            if "error" in result:
+                return {"ok": False, "message": result["error"]["error_msg"]}
+            return {"ok": True, "post_id": str(result["response"]["post_id"])}
         except Exception as e:
             return {"ok": False, "message": str(e)}
