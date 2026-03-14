@@ -38,25 +38,27 @@ class VKPoster(BasePlatform):
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
             attachments = []
+            photo_skipped = False
             if media_path and media_type == "photo":
                 server_resp = self._call("photos.getWallUploadServer", group_id=abs(self.owner_id))
                 if "error" in server_resp:
-                    return {"ok": False, "message": f"getWallUploadServer: {server_resp['error']['error_msg']}"}
-                upload_url = server_resp["response"]["upload_url"]
-
-                with open(media_path, "rb") as f:
-                    uploaded = requests.post(upload_url, files={"photo": f}).json()
-
-                save_resp = self._call("photos.saveWallPhoto",
-                    group_id=abs(self.owner_id),
-                    photo=uploaded["photo"],
-                    server=uploaded["server"],
-                    hash=uploaded["hash"],
-                )
-                if "error" in save_resp:
-                    return {"ok": False, "message": f"saveWallPhoto: {save_resp['error']['error_msg']}"}
-                p = save_resp["response"][0]
-                attachments.append(f"photo{p['owner_id']}_{p['id']}")
+                    # Community tokens can't upload photos — post text only
+                    photo_skipped = True
+                else:
+                    upload_url = server_resp["response"]["upload_url"]
+                    with open(media_path, "rb") as f:
+                        uploaded = requests.post(upload_url, files={"photo": f}).json()
+                    save_resp = self._call("photos.saveWallPhoto",
+                        group_id=abs(self.owner_id),
+                        photo=uploaded["photo"],
+                        server=uploaded["server"],
+                        hash=uploaded["hash"],
+                    )
+                    if "error" in save_resp:
+                        photo_skipped = True
+                    else:
+                        p = save_resp["response"][0]
+                        attachments.append(f"photo{p['owner_id']}_{p['id']}")
 
             params = dict(owner_id=self.owner_id, message=text, attachments=",".join(attachments))
             if self.owner_id < 0:
@@ -65,6 +67,7 @@ class VKPoster(BasePlatform):
             result = self._call("wall.post", **params)
             if "error" in result:
                 return {"ok": False, "message": result["error"]["error_msg"]}
-            return {"ok": True, "post_id": str(result["response"]["post_id"])}
+            msg = "Опубликовано" + (" (без фото — community токен не поддерживает загрузку фото)" if photo_skipped else "")
+            return {"ok": True, "post_id": str(result["response"]["post_id"]), "message": msg}
         except Exception as e:
             return {"ok": False, "message": str(e)}
