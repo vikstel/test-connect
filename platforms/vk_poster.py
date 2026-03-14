@@ -23,9 +23,13 @@ class VKPoster(BasePlatform):
                 return {"ok": True, "message": f"Подключён как {u['first_name']} {u['last_name']}"}
             # Group token — check group info
             data = self._call("groups.getById", group_id=abs(self.owner_id))
-            if "response" in data and data["response"]:
-                g = data["response"][0]
-                return {"ok": True, "message": f"Группа «{g['name']}»"}
+            if "response" in data:
+                resp = data["response"]
+                # API 5.199 returns {"groups": [...]} , older returns [...]
+                groups = resp.get("groups", resp) if isinstance(resp, dict) else resp
+                if groups:
+                    g = groups[0]
+                    return {"ok": True, "message": f"Группа «{g['name']}»"}
             err = data.get("error", {}).get("error_msg", "Неизвестная ошибка")
             return {"ok": False, "message": err}
         except Exception as e:
