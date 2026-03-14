@@ -11,8 +11,13 @@ class VKPoster(BasePlatform):
     def test_connection(self) -> dict:
         try:
             info = self.vk.users.get()
-            user = info[0]
-            return {"ok": True, "message": f"Подключён как {user['first_name']} {user['last_name']}"}
+            if info:
+                user = info[0]
+                return {"ok": True, "message": f"Подключён как {user['first_name']} {user['last_name']}"}
+            # Group token — check via groups API
+            group_info = self.vk.groups.getById(group_id=abs(self.owner_id))
+            group = group_info[0]
+            return {"ok": True, "message": f"Подключён как группа «{group['name']}»"}
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
