@@ -29,11 +29,10 @@ class VKPoster(BasePlatform):
                 photo = upload.photo_wall(media_path, group_id=abs(self.owner_id))
                 p = photo[0]
                 attachments.append(f"photo{p['owner_id']}_{p['id']}")
-            result = self.vk.wall.post(
-                owner_id=self.owner_id,
-                message=text,
-                attachments=",".join(attachments)
-            )
+            params = dict(owner_id=self.owner_id, message=text, attachments=",".join(attachments))
+            if self.owner_id < 0:
+                params["from_group"] = 1
+            result = self.vk.wall.post(**params)
             return {"ok": True, "post_id": str(result["post_id"])}
         except Exception as e:
             return {"ok": False, "message": str(e)}
