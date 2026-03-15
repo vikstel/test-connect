@@ -49,8 +49,8 @@ class VKPoster(BasePlatform):
             if media_path and media_type == "photo":
                 server_resp = self._call("photos.getWallUploadServer", group_id=abs(self.owner_id))
                 if "error" in server_resp:
-                    # Community tokens can't upload photos — post text only
-                    photo_skipped = True
+                    err = server_resp["error"]
+                    photo_skipped = f"[{err.get('error_code')}] {err.get('error_msg')}"
                 else:
                     upload_url = server_resp["response"]["upload_url"]
                     with open(media_path, "rb") as f:
@@ -62,7 +62,8 @@ class VKPoster(BasePlatform):
                         hash=uploaded["hash"],
                     )
                     if "error" in save_resp:
-                        photo_skipped = True
+                        err = save_resp["error"]
+                        photo_skipped = f"saveWallPhoto [{err.get('error_code')}] {err.get('error_msg')}"
                     else:
                         p = save_resp["response"][0]
                         attachments.append(f"photo{p['owner_id']}_{p['id']}")
@@ -75,7 +76,7 @@ class VKPoster(BasePlatform):
             if "error" in result:
                 err = result["error"]
                 return {"ok": False, "message": f"[{err.get('error_code')}] {err.get('error_msg')}"}
-            msg = "Опубликовано" + (" (без фото — community токен не поддерживает загрузку фото)" if photo_skipped else "")
+            msg = "Опубликовано" + (f" (фото пропущено: {photo_skipped})" if photo_skipped else "")
             return {"ok": True, "post_id": str(result["response"]["post_id"]), "message": msg}
         except Exception as e:
             return {"ok": False, "message": str(e)}
