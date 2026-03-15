@@ -191,6 +191,14 @@ def vk_oauth_start():
 
 @app.get("/oauth/vk/callback")
 def vk_oauth_callback(code: str = None, error: str = None, error_description: str = None, state: str = None):
+    try:
+     return _vk_callback_inner(code, error, error_description, state)
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
+
+
+def _vk_callback_inner(code, error, error_description, state):
     if error:
         return RedirectResponse(f"/?vk_error={error_description or error}")
     if not code:
