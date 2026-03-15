@@ -182,6 +182,10 @@ def vk_oauth_callback(code: str = None, error: str = None, error_description: st
     import os
     app_id = os.getenv("VK_APP_ID")
     client_secret = os.getenv("VK_CLIENT_SECRET")
+
+    if not app_id or not client_secret:
+        return JSONResponse({"error": "VK_APP_ID или VK_CLIENT_SECRET не найдены в переменных окружения"}, status_code=500)
+
     code_verifier = _vk_pkce_store.pop(state, None)
 
     payload = {
@@ -202,7 +206,7 @@ def vk_oauth_callback(code: str = None, error: str = None, error_description: st
         return RedirectResponse("/?vk_connected=1")
     else:
         err = data.get("error_description") or data.get("error") or str(data)
-        return RedirectResponse(f"/?vk_error={err}")
+        return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
 
 
 if __name__ == "__main__":
