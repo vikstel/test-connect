@@ -73,7 +73,8 @@ class VKPoster(BasePlatform):
 
             result = self._call("wall.post", **params)
             if "error" in result:
-                return {"ok": False, "message": result["error"]["error_msg"]}
+                err = result["error"]
+                return {"ok": False, "message": f"[{err.get('error_code')}] {err.get('error_msg')}"}
             msg = "Опубликовано" + (" (без фото — community токен не поддерживает загрузку фото)" if photo_skipped else "")
             return {"ok": True, "post_id": str(result["response"]["post_id"]), "message": msg}
         except Exception as e:
