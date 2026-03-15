@@ -289,22 +289,27 @@ const PLATFORMS = {
     name: "VKontakte",
     icon: "🔵",
     color: "#4a76a8",
+    oauthFlow: true,
     fields: [
-      { key: "access_token", label: "Community Token группы", placeholder: "vk1.a.xxxxx" },
+      { key: "access_token", label: "Access Token (необязательно, или получить через OAuth)", placeholder: "vk1.a.xxxxx" },
       { key: "target_id", label: "ID группы/паблика (куда постить)", placeholder: "-123456789" },
     ],
     instruction: `
-      <strong>Как получить Community Token:</strong>
+      <strong>Вариант 1 — OAuth (рекомендуется):</strong>
       <ol>
-        <li>Открыть страницу своей группы ВКонтакте</li>
-        <li><strong>Управление → Настройки → Работа с API</strong></li>
-        <li>Нажать <strong>«Создать ключ»</strong> → отметить: ✅ Управление стеной + ✅ Фотографии</li>
-        <li>Скопировать токен (начинается с <code>vk1.a.</code>)</li>
+        <li>Введите только ID группы</li>
+        <li>Нажмите <strong>«Сохранить и войти через VK»</strong></li>
+        <li>Подтвердите доступ — токен сохранится автоматически</li>
       </ol>
       <br>
-      <strong>ID группы:</strong> отрицательное число. Открыть группу → в URL <code>club123456</code> → ID = <code>-123456</code>
-      <br><br>
-      ⚠️ Загрузка фото недоступна с community токеном — только текст.
+      <strong>Вариант 2 — Community Token (только текст, без фото):</strong>
+      <ol>
+        <li>Группа → <strong>Управление → Настройки → Работа с API</strong></li>
+        <li><strong>Создать ключ</strong> → ✅ Стена + ✅ Фотографии</li>
+        <li>Вставьте токен выше</li>
+      </ol>
+      <br>
+      <strong>ID группы:</strong> отрицательное число. URL <code>club123456</code> → ID = <code>-123456</code>
     `
   },
   ok: {
