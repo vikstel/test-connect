@@ -44,9 +44,45 @@ class OKPoster(BasePlatform):
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
+    def _upload_photo(self, media_path: str) -> str | None:
+        """Загружает фото в группу OK, возвращает token для attachment"""
+        # Шаг 1: получить URL для загрузки
+        upload_info = self._call("photosV2.getUploadUrl", {
+            "gid": self.group_id,
+            "count": "1",
+        })
+        if "error_code" in upload_info:
+            return None
+        upload_url = upload_info.get("upload_url")
+        if not upload_url:
+            return None
+
+        # Шаг 2: загрузить файл
+        with open(media_path, "rb") as f:
+            r = requests.post(upload_url, files={"pic1": f})
+        upload_result = r.json()
+
+        # Шаг 3: подтвердить загрузку
+        photos = upload_result.get("photos", {})
+        if not photos:
+            return None
+        token = list(photos.values())[0].get("token")
+        return token
+
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
-            attachment = {"media": [{"type": "text", "text": text}]}
+            media_list = []
+
+            # Добавляем фото если есть
+            if media_path and media_type == "photo":
+                token = self._upload_photo(media_path)
+                if token:
+                    media_list.append({"type": "photo", "list": [{"id": token}]})
+
+            # Текст всегда добавляем
+            media_list.append({"type": "text", "text": text})
+
+            attachment = {"media": media_list}
             result = self._call("mediatopic.post", {
                 "gid": self.group_id,
                 "type": "GROUP_THEME",
