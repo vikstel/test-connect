@@ -44,8 +44,10 @@ class OKPoster(BasePlatform):
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
-    def _upload_photo(self, media_path: str) -> dict | None:
-        """Загружает фото в группу OK, возвращает данные для attachment"""
+    def _upload_photo(self, media_path: str) -> str | None:
+        """Загружает фото в OK, возвращает token для mediatopic attachment.
+        Согласно документации OK: для медиатопиков commit не нужен,
+        используем token напрямую из ответа на загрузку."""
         # Шаг 1: получить URL для загрузки
         upload_info = self._call("photosV2.getUploadUrl", {
             "gid": self.group_id,
@@ -57,23 +59,21 @@ class OKPoster(BasePlatform):
         if not upload_url:
             return None
 
-        # Шаг 2: загрузить файл на upload_url
+        # Шаг 2: загрузить файл
         with open(media_path, "rb") as f:
             r = requests.post(upload_url, files={"pic1": f})
         upload_result = r.json()
 
-        # Шаг 3: извлечь photo_id и token
-        # структура: {"photos": {"PHOTO_ID": {"token": "..."}}}
+        # Шаг 3: извлечь token из ответа
+        # структура: {"photos": {"KEY": {"token": "LONG_TOKEN"}}}
         photos = upload_result.get("photos", {})
         if not photos:
             raise Exception(f"Upload failed: {upload_result}")
-        photo_id, photo_data = list(photos.items())[0]
-        token = photo_data.get("token")
+        token = list(photos.values())[0].get("token")
         if not token:
             raise Exception(f"No token in upload result: {upload_result}")
 
-        # Возвращаем и числовой id и токен для отладки
-        return {"photo_id": str(photo_id), "token": token}
+        return token
 
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
@@ -81,12 +81,10 @@ class OKPoster(BasePlatform):
 
             # Добавляем фото если есть
             if media_path and media_type == "photo":
-                photo_data = self._upload_photo(media_path)
-                if photo_data:
-                    # Передаём токен напрямую из upload (без commit)
-                    media_list.append({"type": "photo", "list": [
-                        {"id": photo_data["photo_id"], "token": photo_data["token"]}
-                    ]})
+                token = self._upload_photo(media_path)
+                if token:
+                    # Для медиатопика commit не нужен — используем token напрямую
+                    media_list.append({"type": "photo", "list": [{"id": token}]})
 
             # Текст всегда добавляем
             media_list.append({"type": "text", "text": text})
