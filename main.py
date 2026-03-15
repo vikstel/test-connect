@@ -169,72 +169,51 @@ def vk_oauth_start():
     if not app_id:
         return JSONResponse({"error": "VK_APP_ID не найден в .env"}, status_code=400)
 
-    code_verifier = secrets.token_urlsafe(64)
-    code_challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(code_verifier.encode()).digest()
-    ).rstrip(b"=").decode()
     state = secrets.token_urlsafe(16)
-    _pkce_save(state, code_verifier)
-
     url = (
-        f"https://id.vk.ru/authorize"
+        f"https://oauth.vk.com/authorize"
         f"?client_id={app_id}"
         f"&redirect_uri={VK_REDIRECT_URI}"
-        f"&response_type=code"
         f"&scope={VK_SCOPE}"
+        f"&response_type=token"
         f"&state={state}"
-        f"&code_challenge={code_challenge}"
-        f"&code_challenge_method=S256"
+        f"&v=5.199"
     )
     return RedirectResponse(url)
 
 
 @app.get("/oauth/vk/callback")
-def vk_oauth_callback(
-    code: str = None, error: str = None, error_description: str = None,
-    state: str = None, device_id: str = None
-):
-    try:
-        if error:
-            return RedirectResponse(f"/?vk_error={error_description or error}")
-        if not code:
-            return RedirectResponse("/?vk_error=no_code")
+def vk_oauth_callback(error: str = None, error_description: str = None):
+    if error:
+        return RedirectResponse(f"/?vk_error={error_description or error}")
+    # Token arrives in URL fragment — handled by JS
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse("""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>VK Auth</title></head><body>
+<script>
+  const params = Object.fromEntries(new URLSearchParams(location.hash.substring(1)));
+  if (params.access_token) {
+    fetch('/api/vk/save_token', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({access_token: params.access_token})
+    }).then(() => { location.href = '/?vk_connected=1'; });
+  } else {
+    location.href = '/?vk_error=' + encodeURIComponent(params.error_description || params.error || 'no_token');
+  }
+</script>
+<p>Авторизация VK...</p>
+</body></html>""")
 
-        from config import load_credentials
-        load_credentials()
-        import os
-        app_id = os.getenv("VK_APP_ID")
-        if not app_id:
-            return JSONResponse({"error": "VK_APP_ID не найден"}, status_code=500)
 
-        code_verifier = _pkce_pop(state)
-
-        query_params = {
-            "grant_type": "authorization_code",
-            "redirect_uri": VK_REDIRECT_URI,
-            "client_id": app_id,
-            "device_id": device_id,
-            "state": state,
-        }
-        if code_verifier:
-            query_params["code_verifier"] = code_verifier
-
-        r = http_requests.post(
-            "https://id.vk.ru/oauth2/auth",
-            params=query_params,
-            data={"code": code},
-        )
-        data = r.json()
-
-        if "access_token" in data:
-            save_platform("vk", {"access_token": data["access_token"]})
-            return RedirectResponse("/?vk_connected=1")
-        else:
-            err = data.get("error_description") or data.get("error") or str(data)
-            return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
-    except Exception as e:
-        import traceback
-        return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
+@app.post("/api/vk/save_token")
+async def vk_save_token(request: Request):
+    data = await request.json()
+    token = data.get("access_token")
+    if not token:
+        return {"ok": False}
+    save_platform("vk", {"access_token": token})
+    return {"ok": True}
 
     if "access_token" in data:
         save_platform("vk", {"access_token": data["access_token"]})
