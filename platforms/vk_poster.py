@@ -9,6 +9,13 @@ class VKPoster(BasePlatform):
     def __init__(self, access_token: str, target_id: str, **kwargs):
         self.token = access_token
         self.owner_id = int(target_id)
+        self._is_group_token = None  # detected lazily
+
+    def _detect_token_type(self):
+        if self._is_group_token is None:
+            data = self._call("users.get")
+            self._is_group_token = not (data.get("response") and data["response"])
+        return self._is_group_token
 
     def _call(self, method: str, **params) -> dict:
         params.update({"access_token": self.token, "v": VK_V})
@@ -61,7 +68,7 @@ class VKPoster(BasePlatform):
                         attachments.append(f"photo{p['owner_id']}_{p['id']}")
 
             params = dict(owner_id=self.owner_id, message=text, attachments=",".join(attachments))
-            if self.owner_id < 0:
+            if self.owner_id < 0 and self._detect_token_type():
                 params["from_group"] = 1
 
             result = self._call("wall.post", **params)
