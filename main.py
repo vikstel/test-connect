@@ -135,7 +135,7 @@ def delete_job(job_id: str):
 
 
 VK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/vk/callback"
-VK_SCOPE = "wall,photos,video,offline"
+VK_SCOPE = "90116"  # wall(8192) + photos(4) + video(16384) + offline(65536)
 
 
 _VK_PKCE_FILE = Path("vk_pkce.json")
