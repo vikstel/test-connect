@@ -190,50 +190,51 @@ def vk_oauth_start():
 
 
 @app.get("/oauth/vk/callback")
-def vk_oauth_callback(code: str = None, error: str = None, error_description: str = None, state: str = None):
+def vk_oauth_callback(
+    code: str = None, error: str = None, error_description: str = None,
+    state: str = None, device_id: str = None
+):
     try:
-     return _vk_callback_inner(code, error, error_description, state)
+        if error:
+            return RedirectResponse(f"/?vk_error={error_description or error}")
+        if not code:
+            return RedirectResponse("/?vk_error=no_code")
+
+        from config import load_credentials
+        load_credentials()
+        import os
+        app_id = os.getenv("VK_APP_ID")
+        if not app_id:
+            return JSONResponse({"error": "VK_APP_ID не найден"}, status_code=500)
+
+        code_verifier = _pkce_pop(state)
+
+        query_params = {
+            "grant_type": "authorization_code",
+            "redirect_uri": VK_REDIRECT_URI,
+            "client_id": app_id,
+            "device_id": device_id,
+            "state": state,
+        }
+        if code_verifier:
+            query_params["code_verifier"] = code_verifier
+
+        r = http_requests.post(
+            "https://id.vk.ru/oauth2/auth",
+            params=query_params,
+            data={"code": code},
+        )
+        data = r.json()
+
+        if "access_token" in data:
+            save_platform("vk", {"access_token": data["access_token"]})
+            return RedirectResponse("/?vk_connected=1")
+        else:
+            err = data.get("error_description") or data.get("error") or str(data)
+            return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
-
-
-def _vk_callback_inner(code, error, error_description, state):
-    if error:
-        return RedirectResponse(f"/?vk_error={error_description or error}")
-    if not code:
-        return RedirectResponse("/?vk_error=no_code")
-
-    from config import load_credentials
-    load_credentials()
-    import os
-    app_id = os.getenv("VK_APP_ID")
-    client_secret = os.getenv("VK_CLIENT_SECRET")
-
-    if not app_id or not client_secret:
-        return JSONResponse({"error": "VK_APP_ID или VK_CLIENT_SECRET не найдены в переменных окружения"}, status_code=500)
-
-    code_verifier = _pkce_pop(state)
-
-    payload = {
-        "client_id": app_id,
-        "client_secret": client_secret,
-        "redirect_uri": VK_REDIRECT_URI,
-        "code": code,
-        "grant_type": "authorization_code",
-    }
-    if code_verifier:
-        payload["code_verifier"] = code_verifier
-
-    r = http_requests.get("https://oauth.vk.ru/access_token", params=payload)
-    data = r.json()
-
-    if "access_token" in data:
-        save_platform("vk", {"access_token": data["access_token"]})
-        return RedirectResponse("/?vk_connected=1")
-    else:
-        err = data.get("error_description") or data.get("error") or str(data)
-        return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
 
     if "access_token" in data:
         save_platform("vk", {"access_token": data["access_token"]})
