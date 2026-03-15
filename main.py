@@ -158,7 +158,7 @@ def vk_oauth_start():
     _vk_pkce_store[state] = code_verifier
 
     url = (
-        f"https://id.vk.com/oauth2/auth"
+        f"https://id.vk.com/oauth2/authorize"
         f"?client_id={app_id}"
         f"&redirect_uri={VK_REDIRECT_URI}"
         f"&response_type=code"
