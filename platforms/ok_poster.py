@@ -45,29 +45,42 @@ class OKPoster(BasePlatform):
             return {"ok": False, "message": str(e)}
 
     def _upload_photo(self, media_path: str) -> str | None:
-        """Загружает фото в группу OK, возвращает token для attachment"""
+        """Загружает фото в группу OK, возвращает photo_id для attachment"""
         # Шаг 1: получить URL для загрузки
         upload_info = self._call("photosV2.getUploadUrl", {
             "gid": self.group_id,
             "count": "1",
         })
         if "error_code" in upload_info:
-            return None
+            raise Exception(f"getUploadUrl error: {upload_info.get('error_msg')}")
         upload_url = upload_info.get("upload_url")
         if not upload_url:
             return None
 
-        # Шаг 2: загрузить файл
+        # Шаг 2: загрузить файл на upload_url
         with open(media_path, "rb") as f:
             r = requests.post(upload_url, files={"pic1": f})
         upload_result = r.json()
 
-        # Шаг 3: подтвердить загрузку
+        # Шаг 3: извлечь photo_id и token из ответа
         photos = upload_result.get("photos", {})
         if not photos:
+            raise Exception(f"Upload failed: {upload_result}")
+        photo_id, photo_data = list(photos.items())[0]
+        token = photo_data.get("token")
+        if not token:
             return None
-        token = list(photos.values())[0].get("token")
-        return token
+
+        # Шаг 4: подтвердить загрузку через photosV2.commit
+        commit_result = self._call("photosV2.commit", {
+            "photo_id": photo_id,
+            "token": token,
+        })
+        if "error_code" in commit_result:
+            raise Exception(f"photosV2.commit error: {commit_result.get('error_msg')}")
+
+        # Возвращаем photo_id для использования в attachment
+        return str(photo_id)
 
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
@@ -75,9 +88,9 @@ class OKPoster(BasePlatform):
 
             # Добавляем фото если есть
             if media_path and media_type == "photo":
-                token = self._upload_photo(media_path)
-                if token:
-                    media_list.append({"type": "photo", "list": [{"id": token}]})
+                photo_id = self._upload_photo(media_path)
+                if photo_id:
+                    media_list.append({"type": "photo", "list": [{"id": photo_id}]})
 
             # Текст всегда добавляем
             media_list.append({"type": "text", "text": text})
