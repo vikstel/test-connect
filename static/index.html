@@ -316,19 +316,41 @@ const PLATFORMS = {
       { key: "group_id", label: "Group ID (без знака)", placeholder: "123456789" },
     ],
     instruction: `
-      <strong>Регистрация и получение ключей:</strong>
+      <strong>Регистрация приложения:</strong>
       <ol>
         <li>Получить права разработчика: <a href="https://ok.ru/devaccess" target="_blank">ok.ru/devaccess</a></li>
         <li>Создать приложение: <a href="https://ok.ru/vitrine/myuploaded" target="_blank">ok.ru/vitrine/myuploaded</a> → «В разработке» → «Добавить приложение»</li>
-        <li>Заполнить название, добавить платформу OAuth</li>
+        <li>Тип приложения: <strong>«OAuth-приложение»</strong> ❌ НЕ «Игра»!</li>
+        <li>Добавить платформу <strong>OAuth</strong>, Redirect URI: <code>http://localhost</code></li>
         <li>После создания <strong>на email придут</strong> <code>application_key</code> и <code>secret_key</code></li>
+      </ol>
+      <br>
+      <strong>⚠️ Критично — установить permissions (до генерации токена!):</strong>
+      <ol>
+        <li>В настройках приложения → раздел <strong>«Права доступа»</strong></li>
+        <li>В «Обязательно» добавить все три:<br>
+          <code>VALUABLE_ACCESS</code> + <code>LONG_ACCESS_TOKEN</code> + <strong><code>GROUP_CONTENT</code></strong><br>
+          ⚠️ Без <code>GROUP_CONTENT</code> публикация в группу невозможна (ошибка 10)</li>
       </ol>
       <br>
       <strong>Получить Access Token:</strong>
       <ol>
-        <li>Открыть настройки приложения → внизу блок <strong>«Вечный access_token»</strong></li>
+        <li>Настройки приложения → внизу блок <strong>«Вечный access_token»</strong></li>
         <li>Сгенерировать пару <code>access_token</code> + <code>session_secret_key</code></li>
+        <li>Если permissions менялись после — <strong>перегенерировать токен!</strong></li>
       </ol>
+      <br>
+      <strong>Group ID:</strong>
+      <ol>
+        <li>Открыть страницу группы → в URL найти <code>club123456</code> → ID = <code>123456</code> (без знака)</li>
+      </ol>
+      <br>
+      <strong>Коды ошибок:</strong>
+      <ul>
+        <li><code>10</code> — нет права GROUP_CONTENT → добавить и переподключиться</li>
+        <li><code>102</code> — токен истёк → перегенерировать</li>
+        <li><code>100</code> — неверный Group ID или параметры</li>
+      </ul>
     `
   },
   facebook: {

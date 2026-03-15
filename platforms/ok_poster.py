@@ -15,9 +15,11 @@ class OKPoster(BasePlatform):
         self.group_id = group_id
 
     def _sig(self, params: dict) -> str:
-        secret_md5 = hashlib.md5(f"{self.access_token}{self.secret_key}".encode()).hexdigest()
+        # OK API для "вечного токена":
+        # session_secret_key = MD5(access_token + app_secret_key) — уже предвычислен OK
+        # sig = MD5(sorted_params_string + session_secret_key)
         sorted_str = "".join(f"{k}={v}" for k, v in sorted(params.items()))
-        return hashlib.md5(f"{sorted_str}{secret_md5}".encode()).hexdigest()
+        return hashlib.md5(f"{sorted_str}{self.session_secret_key}".encode()).hexdigest()
 
     def _call(self, method: str, params: dict) -> dict:
         params.update({
