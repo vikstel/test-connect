@@ -226,7 +226,14 @@ def _vk_callback_inner(code, error, error_description, state):
         payload["code_verifier"] = code_verifier
 
     r = http_requests.get("https://oauth.vk.ru/access_token", params=payload)
-    return JSONResponse({"status": r.status_code, "body": r.text, "payload_keys": list(payload.keys())})
+    data = r.json()
+
+    if "access_token" in data:
+        save_platform("vk", {"access_token": data["access_token"]})
+        return RedirectResponse("/?vk_connected=1")
+    else:
+        err = data.get("error_description") or data.get("error") or str(data)
+        return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
 
     if "access_token" in data:
         save_platform("vk", {"access_token": data["access_token"]})
