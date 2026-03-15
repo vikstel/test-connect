@@ -146,14 +146,15 @@ def vk_oauth_start():
     app_id = os.getenv("VK_APP_ID")
     if not app_id:
         return JSONResponse({"error": "VK_APP_ID не найден в .env"}, status_code=400)
+    import secrets
+    state = secrets.token_urlsafe(16)
     url = (
-        f"https://oauth.vk.com/authorize"
+        f"https://id.vk.com/oauth2/auth"
         f"?client_id={app_id}"
-        f"&display=page"
         f"&redirect_uri={VK_REDIRECT_URI}"
-        f"&scope={VK_SCOPE}"
         f"&response_type=code"
-        f"&v=5.199"
+        f"&scope={VK_SCOPE}"
+        f"&state={state}"
     )
     return RedirectResponse(url)
 
@@ -171,11 +172,12 @@ def vk_oauth_callback(code: str = None, error: str = None, error_description: st
     app_id = os.getenv("VK_APP_ID")
     client_secret = os.getenv("VK_CLIENT_SECRET")
 
-    r = http_requests.get("https://oauth.vk.com/access_token", params={
+    r = http_requests.post("https://id.vk.com/oauth2/token", data={
         "client_id": app_id,
         "client_secret": client_secret,
         "redirect_uri": VK_REDIRECT_URI,
         "code": code,
+        "grant_type": "authorization_code",
     })
     data = r.json()
 
