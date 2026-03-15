@@ -158,7 +158,7 @@ def vk_oauth_start():
     _vk_pkce_store[state] = code_verifier
 
     url = (
-        f"https://id.vk.com/oauth2/authorize"
+        f"https://id.vk.ru/authorize"
         f"?client_id={app_id}"
         f"&redirect_uri={VK_REDIRECT_URI}"
         f"&response_type=code"
@@ -194,7 +194,7 @@ def vk_oauth_callback(code: str = None, error: str = None, error_description: st
     if code_verifier:
         payload["code_verifier"] = code_verifier
 
-    r = http_requests.post("https://id.vk.com/oauth2/token", data=payload)
+    r = http_requests.post("https://id.vk.ru/oauth2/token", data=payload)
     data = r.json()
 
     if "access_token" in data:
