@@ -7,7 +7,7 @@ from .base import BasePlatform
 class OKPoster(BasePlatform):
     BASE = "https://api.ok.ru/fb.do"
 
-    def __init__(self, access_token: str, group_id: str, application_key: str = None, secret_key: str = None):
+    def __init__(self, access_token: str, group_id: str, application_key: str = None, secret_key: str = None, **kwargs):
         self.access_token = access_token
         self.group_id = group_id
         # application_key и secret_key берутся из env если не переданы
