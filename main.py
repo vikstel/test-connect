@@ -225,7 +225,7 @@ def _vk_callback_inner(code, error, error_description, state):
     if code_verifier:
         payload["code_verifier"] = code_verifier
 
-    r = http_requests.post("https://id.vk.ru/oauth2/token", data=payload)
+    r = http_requests.post("https://oauth.vk.ru/oauth2/token", data=payload)
     return JSONResponse({"status": r.status_code, "body": r.text, "payload_keys": list(payload.keys())})
 
     if "access_token" in data:
