@@ -44,8 +44,8 @@ class OKPoster(BasePlatform):
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
-    def _upload_photo(self, media_path: str) -> str | None:
-        """Загружает фото в группу OK, возвращает photo_id для attachment"""
+    def _upload_photo(self, media_path: str) -> dict | None:
+        """Загружает фото в группу OK, возвращает данные для attachment"""
         # Шаг 1: получить URL для загрузки
         upload_info = self._call("photosV2.getUploadUrl", {
             "gid": self.group_id,
@@ -62,7 +62,7 @@ class OKPoster(BasePlatform):
             r = requests.post(upload_url, files={"pic1": f})
         upload_result = r.json()
 
-        # Шаг 3: извлечь photo_id и token из ответа загрузки
+        # Шаг 3: извлечь photo_id и token
         # структура: {"photos": {"PHOTO_ID": {"token": "..."}}}
         photos = upload_result.get("photos", {})
         if not photos:
@@ -70,23 +70,10 @@ class OKPoster(BasePlatform):
         photo_id, photo_data = list(photos.items())[0]
         token = photo_data.get("token")
         if not token:
-            return None
+            raise Exception(f"No token in upload result: {upload_result}")
 
-        # Шаг 4: commit — передаём photo_id + token
-        commit_result = self._call("photosV2.commit", {"photo_id": photo_id, "token": token})
-        if "error_code" in commit_result:
-            raise Exception(f"photosV2.commit error: {commit_result.get('error_msg')}")
-
-        # Реальный ID фото из commit
-        committed = commit_result.get("photos", [])
-        if not committed:
-            raise Exception(f"photosV2.commit returned no photos: {commit_result}")
-        p = committed[0]
-        # assigned_photo_id — числовой ID; photo_id — токен. Возвращаем оба для отладки
-        real_id = p.get("assigned_photo_id")
-        if not real_id:
-            raise Exception(f"photosV2.commit returned no photo_id: {commit_result}")
-        return {"id": str(real_id), "token": p.get("photo_id", "")}
+        # Возвращаем и числовой id и токен для отладки
+        return {"photo_id": str(photo_id), "token": token}
 
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
@@ -96,9 +83,9 @@ class OKPoster(BasePlatform):
             if media_path and media_type == "photo":
                 photo_data = self._upload_photo(media_path)
                 if photo_data:
-                    # OK API: в list передаём токен photo_id (не assigned_photo_id)
+                    # Передаём токен напрямую из upload (без commit)
                     media_list.append({"type": "photo", "list": [
-                        {"id": photo_data["token"]}
+                        {"id": photo_data["photo_id"], "token": photo_data["token"]}
                     ]})
 
             # Текст всегда добавляем
