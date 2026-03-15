@@ -77,14 +77,16 @@ class OKPoster(BasePlatform):
         if "error_code" in commit_result:
             raise Exception(f"photosV2.commit error: {commit_result.get('error_msg')}")
 
-        # Реальный ID фото — в commit_result.photos[0].assigned_photo_id
+        # Реальный ID фото из commit
         committed = commit_result.get("photos", [])
         if not committed:
             raise Exception(f"photosV2.commit returned no photos: {commit_result}")
-        real_id = committed[0].get("assigned_photo_id")
+        p = committed[0]
+        # assigned_photo_id — числовой ID; photo_id — токен. Возвращаем оба для отладки
+        real_id = p.get("assigned_photo_id")
         if not real_id:
             raise Exception(f"photosV2.commit returned no photo_id: {commit_result}")
-        return str(real_id)
+        return {"id": str(real_id), "token": p.get("photo_id", "")}
 
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
@@ -92,9 +94,12 @@ class OKPoster(BasePlatform):
 
             # Добавляем фото если есть
             if media_path and media_type == "photo":
-                photo_id = self._upload_photo(media_path)
-                if photo_id:
-                    media_list.append({"type": "photo", "list": [{"id": photo_id}]})
+                photo_data = self._upload_photo(media_path)
+                if photo_data:
+                    # Пробуем оба формата: числовой assigned_photo_id и токен photo_id
+                    media_list.append({"type": "photo", "list": [
+                        {"id": photo_data["id"], "photo_id": photo_data["token"]}
+                    ]})
 
             # Текст всегда добавляем
             media_list.append({"type": "text", "text": text})
