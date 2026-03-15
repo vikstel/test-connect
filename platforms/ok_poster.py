@@ -77,8 +77,11 @@ class OKPoster(BasePlatform):
         if "error_code" in commit_result:
             raise Exception(f"photosV2.commit error: {commit_result.get('error_msg')}")
 
-        # Реальный ID фото для attachment
-        real_id = commit_result.get("photo_id") or commit_result.get("id")
+        # Реальный ID фото — в commit_result.photos[0].assigned_photo_id
+        committed = commit_result.get("photos", [])
+        if not committed:
+            raise Exception(f"photosV2.commit returned no photos: {commit_result}")
+        real_id = committed[0].get("assigned_photo_id")
         if not real_id:
             raise Exception(f"photosV2.commit returned no photo_id: {commit_result}")
         return str(real_id)
