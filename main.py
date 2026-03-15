@@ -138,16 +138,25 @@ VK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/vk/
 VK_SCOPE = "wall,photos,video,offline"
 
 
+_vk_pkce_store: dict = {}  # state -> code_verifier
+
+
 @app.get("/oauth/vk")
 def vk_oauth_start():
     from config import load_credentials
     load_credentials()
-    import os
+    import os, secrets, hashlib, base64
     app_id = os.getenv("VK_APP_ID")
     if not app_id:
         return JSONResponse({"error": "VK_APP_ID не найден в .env"}, status_code=400)
-    import secrets
+
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).rstrip(b"=").decode()
     state = secrets.token_urlsafe(16)
+    _vk_pkce_store[state] = code_verifier
+
     url = (
         f"https://id.vk.com/oauth2/auth"
         f"?client_id={app_id}"
@@ -155,12 +164,14 @@ def vk_oauth_start():
         f"&response_type=code"
         f"&scope={VK_SCOPE}"
         f"&state={state}"
+        f"&code_challenge={code_challenge}"
+        f"&code_challenge_method=S256"
     )
     return RedirectResponse(url)
 
 
 @app.get("/oauth/vk/callback")
-def vk_oauth_callback(code: str = None, error: str = None, error_description: str = None):
+def vk_oauth_callback(code: str = None, error: str = None, error_description: str = None, state: str = None):
     if error:
         return RedirectResponse(f"/?vk_error={error_description or error}")
     if not code:
@@ -171,21 +182,26 @@ def vk_oauth_callback(code: str = None, error: str = None, error_description: st
     import os
     app_id = os.getenv("VK_APP_ID")
     client_secret = os.getenv("VK_CLIENT_SECRET")
+    code_verifier = _vk_pkce_store.pop(state, None)
 
-    r = http_requests.post("https://id.vk.com/oauth2/token", data={
+    payload = {
         "client_id": app_id,
         "client_secret": client_secret,
         "redirect_uri": VK_REDIRECT_URI,
         "code": code,
         "grant_type": "authorization_code",
-    })
+    }
+    if code_verifier:
+        payload["code_verifier"] = code_verifier
+
+    r = http_requests.post("https://id.vk.com/oauth2/token", data=payload)
     data = r.json()
 
     if "access_token" in data:
         save_platform("vk", {"access_token": data["access_token"]})
         return RedirectResponse("/?vk_connected=1")
     else:
-        err = data.get("error_description") or data.get("error") or "unknown"
+        err = data.get("error_description") or data.get("error") or str(data)
         return RedirectResponse(f"/?vk_error={err}")
 
 
