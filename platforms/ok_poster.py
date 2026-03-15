@@ -62,18 +62,18 @@ class OKPoster(BasePlatform):
             r = requests.post(upload_url, files={"pic1": f})
         upload_result = r.json()
 
-        # Шаг 3: извлечь token из ответа загрузки
+        # Шаг 3: извлечь photo_id и token из ответа загрузки
+        # структура: {"photos": {"PHOTO_ID": {"token": "..."}}}
         photos = upload_result.get("photos", {})
         if not photos:
             raise Exception(f"Upload failed: {upload_result}")
-        # ключ словаря — внутренний id загрузки, нам нужен token
-        photo_data = list(photos.values())[0]
+        photo_id, photo_data = list(photos.items())[0]
         token = photo_data.get("token")
         if not token:
             return None
 
-        # Шаг 4: commit — подтверждаем загрузку, получаем реальный photo_id
-        commit_result = self._call("photosV2.commit", {"token": token})
+        # Шаг 4: commit — передаём photo_id + token
+        commit_result = self._call("photosV2.commit", {"photo_id": photo_id, "token": token})
         if "error_code" in commit_result:
             raise Exception(f"photosV2.commit error: {commit_result.get('error_msg')}")
 
