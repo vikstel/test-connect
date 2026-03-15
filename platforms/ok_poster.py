@@ -96,9 +96,9 @@ class OKPoster(BasePlatform):
             if media_path and media_type == "photo":
                 photo_data = self._upload_photo(media_path)
                 if photo_data:
-                    # Пробуем оба формата: числовой assigned_photo_id и токен photo_id
+                    # OK API: в list передаём токен photo_id (не assigned_photo_id)
                     media_list.append({"type": "photo", "list": [
-                        {"id": photo_data["id"], "photo_id": photo_data["token"]}
+                        {"id": photo_data["token"]}
                     ]})
 
             # Текст всегда добавляем
