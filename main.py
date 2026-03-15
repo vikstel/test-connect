@@ -226,9 +226,7 @@ def _vk_callback_inner(code, error, error_description, state):
         payload["code_verifier"] = code_verifier
 
     r = http_requests.post("https://id.vk.ru/oauth2/token", data=payload)
-    if not r.text:
-        return JSONResponse({"error": "empty response from token endpoint", "status": r.status_code, "payload_keys": list(payload.keys())}, status_code=400)
-    data = r.json()
+    return JSONResponse({"status": r.status_code, "body": r.text, "payload_keys": list(payload.keys())})
 
     if "access_token" in data:
         save_platform("vk", {"access_token": data["access_token"]})
