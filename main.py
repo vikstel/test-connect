@@ -138,7 +138,26 @@ VK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/vk/
 VK_SCOPE = "wall,photos,video,offline"
 
 
-_vk_pkce_store: dict = {}  # state -> code_verifier
+_VK_PKCE_FILE = Path("vk_pkce.json")
+
+
+def _pkce_save(state: str, code_verifier: str):
+    import json
+    data = {}
+    if _VK_PKCE_FILE.exists():
+        data = json.loads(_VK_PKCE_FILE.read_text())
+    data[state] = code_verifier
+    _VK_PKCE_FILE.write_text(json.dumps(data))
+
+
+def _pkce_pop(state: str):
+    import json
+    if not _VK_PKCE_FILE.exists():
+        return None
+    data = json.loads(_VK_PKCE_FILE.read_text())
+    verifier = data.pop(state, None)
+    _VK_PKCE_FILE.write_text(json.dumps(data))
+    return verifier
 
 
 @app.get("/oauth/vk")
@@ -155,7 +174,7 @@ def vk_oauth_start():
         hashlib.sha256(code_verifier.encode()).digest()
     ).rstrip(b"=").decode()
     state = secrets.token_urlsafe(16)
-    _vk_pkce_store[state] = code_verifier
+    _pkce_save(state, code_verifier)
 
     url = (
         f"https://id.vk.ru/authorize"
@@ -186,7 +205,7 @@ def vk_oauth_callback(code: str = None, error: str = None, error_description: st
     if not app_id or not client_secret:
         return JSONResponse({"error": "VK_APP_ID или VK_CLIENT_SECRET не найдены в переменных окружения"}, status_code=500)
 
-    code_verifier = _vk_pkce_store.pop(state, None)
+    code_verifier = _pkce_pop(state)
 
     payload = {
         "client_id": app_id,
