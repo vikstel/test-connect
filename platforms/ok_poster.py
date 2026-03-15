@@ -7,16 +7,19 @@ from .base import BasePlatform
 class OKPoster(BasePlatform):
     BASE = "https://api.ok.ru/fb.do"
 
-    def __init__(self, access_token: str, session_secret_key: str, application_key: str, secret_key: str, group_id: str):
+    def __init__(self, access_token: str, group_id: str, application_key: str = None, secret_key: str = None):
         self.access_token = access_token
-        self.session_secret_key = session_secret_key
-        self.application_key = application_key
-        self.secret_key = secret_key
         self.group_id = group_id
+        # application_key и secret_key берутся из env если не переданы
+        import os
+        self.application_key = application_key or os.getenv("OK_APPLICATION_KEY", "")
+        self.secret_key = secret_key or os.getenv("OK_SECRET_KEY", "")
+        # session_secret_key вычисляется из access_token + secret_key
+        self.session_secret_key = hashlib.md5(
+            f"{self.access_token}{self.secret_key}".encode()
+        ).hexdigest()
 
     def _sig(self, params: dict) -> str:
-        # OK API для "вечного токена":
-        # session_secret_key = MD5(access_token + app_secret_key) — уже предвычислен OK
         # sig = MD5(sorted_params_string + session_secret_key)
         sorted_str = "".join(f"{k}={v}" for k, v in sorted(params.items()))
         return hashlib.md5(f"{sorted_str}{self.session_secret_key}".encode()).hexdigest()

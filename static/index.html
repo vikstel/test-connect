@@ -308,48 +308,30 @@ const PLATFORMS = {
     name: "Одноклассники",
     icon: "🟠",
     color: "#f7931e",
+    oauthUrl: "/oauth/ok",
+    oauthParamName: "group_id",
     fields: [
-      { key: "access_token", label: "Access Token", placeholder: "xxxxx" },
-      { key: "session_secret_key", label: "Session Secret Key", placeholder: "xxxxx" },
-      { key: "application_key", label: "Application Key (публичный)", placeholder: "ABCDEFGHIJKLMN" },
-      { key: "secret_key", label: "Secret Key (приватный)", placeholder: "xxxxx" },
       { key: "group_id", label: "Group ID (без знака)", placeholder: "123456789" },
     ],
     instruction: `
-      <strong>Регистрация приложения:</strong>
+      <strong>Для подключения:</strong>
       <ol>
-        <li>Получить права разработчика: <a href="https://ok.ru/devaccess" target="_blank">ok.ru/devaccess</a></li>
-        <li>Создать приложение: <a href="https://ok.ru/vitrine/myuploaded" target="_blank">ok.ru/vitrine/myuploaded</a> → «В разработке» → «Добавить приложение»</li>
-        <li>Тип приложения: <strong>«OAuth-приложение»</strong> ❌ НЕ «Игра»!</li>
-        <li>Добавить платформу <strong>OAuth</strong>, Redirect URI: <code>http://localhost</code></li>
-        <li>После создания <strong>на email придут</strong> <code>application_key</code> и <code>secret_key</code></li>
+        <li>Введи Group ID своей группы</li>
+        <li>Нажми <strong>«Подключить через OK»</strong> — откроется страница авторизации</li>
+        <li>Разреши приложению доступ</li>
       </ol>
       <br>
-      <strong>⚠️ Критично — установить permissions (до генерации токена!):</strong>
+      <strong>Где найти Group ID:</strong>
       <ol>
-        <li>В настройках приложения → раздел <strong>«Права доступа»</strong></li>
-        <li>В «Обязательно» добавить все три:<br>
-          <code>VALUABLE_ACCESS</code> + <code>LONG_ACCESS_TOKEN</code> + <strong><code>GROUP_CONTENT</code></strong><br>
-          ⚠️ Без <code>GROUP_CONTENT</code> публикация в группу невозможна (ошибка 10)</li>
-      </ol>
-      <br>
-      <strong>Получить Access Token:</strong>
-      <ol>
-        <li>Настройки приложения → внизу блок <strong>«Вечный access_token»</strong></li>
-        <li>Сгенерировать пару <code>access_token</code> + <code>session_secret_key</code></li>
-        <li>Если permissions менялись после — <strong>перегенерировать токен!</strong></li>
-      </ol>
-      <br>
-      <strong>Group ID:</strong>
-      <ol>
-        <li>Открыть страницу группы → в URL найти <code>club123456</code> → ID = <code>123456</code> (без знака)</li>
+        <li>Открыть страницу группы → в URL найти <code>group/123456789</code> → ID = <code>123456789</code></li>
+        <li>Или: настройки группы → раздел «О группе» → ID группы</li>
       </ol>
       <br>
       <strong>Коды ошибок:</strong>
       <ul>
-        <li><code>10</code> — нет права GROUP_CONTENT → добавить и переподключиться</li>
-        <li><code>102</code> — токен истёк → перегенерировать</li>
-        <li><code>100</code> — неверный Group ID или параметры</li>
+        <li><code>10</code> — нет прав GROUP_CONTENT у приложения</li>
+        <li><code>102</code> — токен истёк → переподключиться</li>
+        <li><code>100</code> — неверный Group ID</li>
       </ul>
     `
   },
@@ -456,6 +438,12 @@ async function init() {
   } else if (params.get('vk_error')) {
     history.replaceState({}, '', '/');
     setTimeout(() => showToast('Ошибка подключения VK: ' + params.get('vk_error'), 'error'), 300);
+  } else if (params.get('ok_connected')) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => showToast('Одноклассники успешно подключены!', 'ok'), 300);
+  } else if (params.get('ok_error')) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => showToast('Ошибка подключения OK: ' + params.get('ok_error'), 'error'), 300);
   }
   renderPlatformGrid();
   renderCheckboxes();
@@ -541,7 +529,13 @@ function openConnect(platform) {
   `).join('');
 
   const saveBtn = document.querySelector('#connectModal .modal-actions .btn-primary');
-  saveBtn.textContent = p.oauthFlow ? '🔗 Сохранить и войти через VK' : 'Сохранить';
+  if (p.oauthFlow) {
+    saveBtn.textContent = '🔗 Сохранить и войти через VK';
+  } else if (p.oauthUrl) {
+    saveBtn.textContent = `🔗 Подключить через OK`;
+  } else {
+    saveBtn.textContent = 'Сохранить';
+  }
 
   document.getElementById('connectModal').classList.add('active');
 }
@@ -555,22 +549,36 @@ async function saveConnect() {
   const data = {};
   for (const f of p.fields) {
     const val = document.getElementById(`field-${f.key}`)?.value?.trim();
+    // Пропускаем обязательную проверку для access_token в oauth-flow (он придёт от сервера)
     if (!val && !(p.oauthFlow && f.key === 'access_token')) {
       showToast('Заполните все поля', 'error'); return;
     }
     if (val) data[f.key] = val;
   }
 
-  const res = await fetch(`/api/connect/${currentPlatform}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  const json = await res.json();
-  if (!json.ok) { showToast('Ошибка сохранения', 'error'); return; }
+  // Для oauthUrl — данные не сохраняем заранее, они сохранятся после колбэка
+  if (p.oauthUrl) {
+    // просто редиректим с параметрами
+  } else {
+    const res = await fetch(`/api/connect/${currentPlatform}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const json = await res.json();
+    if (!json.ok) { showToast('Ошибка сохранения', 'error'); return; }
+  }
 
   if (p.oauthFlow && !data.access_token) {
+    // VK OAuth — редирект сразу
     window.location.href = `/oauth/${currentPlatform}`;
+  } else if (p.oauthUrl) {
+    // OAuth с параметрами (OK и др.) — передаём поля как query params
+    const paramVal = p.oauthParamName ? (data[p.oauthParamName] || '') : '';
+    const url = p.oauthParamName
+      ? `${p.oauthUrl}?${p.oauthParamName}=${encodeURIComponent(paramVal)}`
+      : p.oauthUrl;
+    window.location.href = url;
   } else {
     closeModal('connectModal');
     updateStatusBadge(currentPlatform, 'configured');

@@ -135,6 +135,7 @@ def delete_job(job_id: str):
 
 
 VK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/vk/callback"
+OK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/ok/callback"
 VK_SCOPE = "90116"  # wall(8192) + photos(4) + video(16384) + offline(65536)
 
 
@@ -232,6 +233,95 @@ def vk_oauth_callback(
         else:
             err = data.get("error_description") or data.get("error") or str(data)
             return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
+
+
+@app.get("/oauth/ok")
+def ok_oauth_start(group_id: str = None):
+    import os, secrets
+    app_id = os.getenv("OK_APP_ID")
+    if not app_id:
+        return JSONResponse({"error": "OK_APP_ID не найден в .env"}, status_code=400)
+
+    state = secrets.token_urlsafe(16)
+    # Сохраняем group_id вместе со state чтобы использовать после колбэка
+    _ok_state_save(state, group_id or "")
+
+    scope = "VALUABLE_ACCESS;LONG_ACCESS_TOKEN;GROUP_CONTENT"
+    url = (
+        f"https://connect.ok.ru/oauth/authorize"
+        f"?client_id={app_id}"
+        f"&scope={scope}"
+        f"&response_type=code"
+        f"&redirect_uri={OK_REDIRECT_URI}"
+        f"&state={state}"
+        f"&layout=w"
+    )
+    return RedirectResponse(url)
+
+
+_OK_STATE_FILE = Path("ok_state.json")
+
+
+def _ok_state_save(state: str, group_id: str):
+    import json
+    data = {}
+    if _OK_STATE_FILE.exists():
+        data = json.loads(_OK_STATE_FILE.read_text())
+    data[state] = group_id
+    _OK_STATE_FILE.write_text(json.dumps(data))
+
+
+def _ok_state_pop(state: str):
+    import json
+    if not _OK_STATE_FILE.exists():
+        return None
+    data = json.loads(_OK_STATE_FILE.read_text())
+    group_id = data.pop(state, None)
+    _OK_STATE_FILE.write_text(json.dumps(data))
+    return group_id
+
+
+@app.get("/oauth/ok/callback")
+def ok_oauth_callback(code: str = None, error: str = None, state: str = None):
+    try:
+        if error:
+            return RedirectResponse(f"/?ok_error={error}")
+        if not code:
+            return RedirectResponse("/?ok_error=no_code")
+
+        import os
+        app_id = os.getenv("OK_APP_ID")
+        secret_key = os.getenv("OK_SECRET_KEY")
+        if not app_id or not secret_key:
+            return JSONResponse({"error": "OK_APP_ID или OK_SECRET_KEY не найдены"}, status_code=500)
+
+        group_id = _ok_state_pop(state) if state else ""
+
+        # Обмениваем code на access_token
+        r = http_requests.post(
+            "https://api.ok.ru/oauth/token.do",
+            params={
+                "code": code,
+                "redirect_uri": OK_REDIRECT_URI,
+                "grant_type": "authorization_code",
+                "client_id": app_id,
+                "client_secret": secret_key,
+            }
+        )
+        data = r.json()
+
+        if "access_token" not in data:
+            err = data.get("error_description") or data.get("error") or str(data)
+            return JSONResponse({"ok_token_error": err, "response": data}, status_code=400)
+
+        save_platform("ok", {
+            "access_token": data["access_token"],
+            "group_id": group_id,
+        })
+        return RedirectResponse("/?ok_connected=1")
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
