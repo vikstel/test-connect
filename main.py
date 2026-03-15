@@ -249,7 +249,7 @@ def ok_oauth_start(group_id: str = None):
     # Сохраняем group_id вместе со state чтобы использовать после колбэка
     _ok_state_save(state, group_id or "")
 
-    scope = "VALUABLE_ACCESS;LONG_ACCESS_TOKEN;GROUP_CONTENT"
+    scope = "VALUABLE_ACCESS;LONG_ACCESS_TOKEN;GROUP_CONTENT;PHOTO_CONTENT"
     url = (
         f"https://connect.ok.ru/oauth/authorize"
         f"?client_id={app_id}"
