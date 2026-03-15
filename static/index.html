@@ -289,23 +289,15 @@ const PLATFORMS = {
     name: "VKontakte",
     icon: "🔵",
     color: "#4a76a8",
-    oauthFlow: true,
     fields: [
-      { key: "access_token", label: "Access Token (необязательно, или получить через OAuth)", placeholder: "vk1.a.xxxxx" },
+      { key: "access_token", label: "Community Token", placeholder: "vk1.a.xxxxx" },
       { key: "target_id", label: "ID группы/паблика (куда постить)", placeholder: "-123456789" },
     ],
     instruction: `
-      <strong>Вариант 1 — OAuth (рекомендуется):</strong>
-      <ol>
-        <li>Введите только ID группы</li>
-        <li>Нажмите <strong>«Сохранить и войти через VK»</strong></li>
-        <li>Подтвердите доступ — токен сохранится автоматически</li>
-      </ol>
-      <br>
-      <strong>Вариант 2 — Community Token (только текст, без фото):</strong>
+      <strong>Получить Community Token:</strong>
       <ol>
         <li>Группа → <strong>Управление → Настройки → Работа с API</strong></li>
-        <li><strong>Создать ключ</strong> → ✅ Стена + ✅ Фотографии</li>
+        <li><strong>Создать ключ</strong> → ✅ Управление сообществом + ✅ Стена + ✅ Фотографии</li>
         <li>Вставьте токен выше</li>
       </ol>
       <br>

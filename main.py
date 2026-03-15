@@ -160,28 +160,6 @@ def _pkce_pop(state: str):
     return verifier
 
 
-_VK_PKCE_FILE = Path("vk_pkce.json")
-
-
-def _pkce_save(state: str, code_verifier: str):
-    import json
-    data = {}
-    if _VK_PKCE_FILE.exists():
-        data = json.loads(_VK_PKCE_FILE.read_text())
-    data[state] = code_verifier
-    _VK_PKCE_FILE.write_text(json.dumps(data))
-
-
-def _pkce_pop(state: str):
-    import json
-    if not _VK_PKCE_FILE.exists():
-        return None
-    data = json.loads(_VK_PKCE_FILE.read_text())
-    verifier = data.pop(state, None)
-    _VK_PKCE_FILE.write_text(json.dumps(data))
-    return verifier
-
-
 @app.get("/oauth/vk")
 def vk_oauth_start():
     from config import load_credentials
@@ -257,13 +235,6 @@ def vk_oauth_callback(
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
-
-    if "access_token" in data:
-        save_platform("vk", {"access_token": data["access_token"]})
-        return RedirectResponse("/?vk_connected=1")
-    else:
-        err = data.get("error_description") or data.get("error") or str(data)
-        return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
 
 
 if __name__ == "__main__":
