@@ -289,23 +289,22 @@ const PLATFORMS = {
     name: "VKontakte",
     icon: "🔵",
     color: "#4a76a8",
-    oauthFlow: true,
     fields: [
-      { key: "access_token", label: "Access Token (или получить через OAuth ниже)", placeholder: "vk1.a.xxxxx" },
+      { key: "access_token", label: "Community Token группы", placeholder: "vk1.a.xxxxx" },
       { key: "target_id", label: "ID группы/паблика (куда постить)", placeholder: "-123456789" },
     ],
     instruction: `
-      <strong>Как получить ключи:</strong>
+      <strong>Как получить Community Token:</strong>
       <ol>
-        <li>Создать приложение: <a href="https://id.vk.com/about/business/go/accounts" target="_blank">id.vk.com → Мои приложения</a> → тип <strong>Standalone</strong></li>
-        <li><strong>App ID</strong> — в URL страницы настроек приложения</li>
-        <li><strong>Защищённый ключ</strong> — в разделе «Ключи доступа» настроек приложения</li>
-        <li>В настройках добавить Доверенный Redirect URL: <code>http://localhost/oauth/vk/callback</code></li>
+        <li>Открыть страницу своей группы ВКонтакте</li>
+        <li><strong>Управление → Настройки → Работа с API</strong></li>
+        <li>Нажать <strong>«Создать ключ»</strong> → отметить: ✅ Управление стеной + ✅ Фотографии</li>
+        <li>Скопировать токен (начинается с <code>vk1.a.</code>)</li>
       </ol>
       <br>
-      <strong>ID группы/паблика:</strong> отрицательное число. Найти: открыть группу → в URL <code>club123456</code> → ID = <code>-123456</code>
+      <strong>ID группы:</strong> отрицательное число. Открыть группу → в URL <code>club123456</code> → ID = <code>-123456</code>
       <br><br>
-      После сохранения нажмите <strong>«Войти через VK»</strong> — вас перенаправит на страницу авторизации VK.
+      ⚠️ Загрузка фото недоступна с community токеном — только текст.
     `
   },
   ok: {
