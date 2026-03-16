@@ -352,21 +352,22 @@ const PLATFORMS = {
     name: "Facebook",
     icon: "📘",
     color: "#1877f2",
-    fields: [],
-    oauthUrl: "/oauth/facebook",
+    fields: [
+      { key: "page_access_token", label: "Page Access Token", placeholder: "EAAxxxxx" },
+      { key: "page_id", label: "Page ID", placeholder: "123456789012345" },
+    ],
     instruction: `
-      Нажмите <strong>«Подключить через Facebook»</strong> — вы будете перенаправлены на страницу авторизации Facebook.
-      <br><br>
-      После авторизации выберите страницу, от имени которой хотите публиковать посты.
-      <br><br>
-      <strong>Требования:</strong>
-      <ul>
-        <li>Нужна <strong>Facebook Page</strong> (не личный профиль)</li>
-        <li>Вы должны быть <strong>администратором</strong> страницы</li>
-      </ul>
+      <strong>Как получить токены:</strong>
+      <ol>
+        <li>Открыть <a href="https://developers.facebook.com/tools/explorer" target="_blank">Graph API Explorer</a></li>
+        <li>Справа вверху: <strong>Meta App</strong> → выбрать своё приложение</li>
+        <li>Нажать <strong>Generate Access Token</strong> → разрешить доступ</li>
+        <li>В поле запроса выполнить: <code>GET /me/accounts</code></li>
+        <li>В ответе найти свою страницу → скопировать <code>id</code> (Page ID) и <code>access_token</code></li>
+      </ol>
       <br>
-      ⚠️ В режиме разработки приложения работает только для тестовых пользователей.
-      Для публичного использования требуется App Review.
+      ⚠️ Токен краткосрочный (~1ч). Для долгосрочного: в Explorer выполните
+      <code>GET /oauth/access_token?grant_type=fb_exchange_token&client_id=APP_ID&client_secret=APP_SECRET&fb_exchange_token=SHORT_TOKEN</code>
     `
   },
   instagram: {
