@@ -1,41 +1,26 @@
 import json
-from database import get_db
+from pathlib import Path
+
+CREDENTIALS_FILE = Path("credentials.json")
 
 
-def get_platform_config(platform: str, user_id: int) -> dict:
-    """Возвращает конфиг платформы для конкретного пользователя."""
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT data FROM credentials WHERE user_id=? AND platform=?",
-            (user_id, platform),
-        ).fetchone()
-        return json.loads(row["data"]) if row else {}
+def load_credentials() -> dict:
+    if CREDENTIALS_FILE.exists():
+        return json.loads(CREDENTIALS_FILE.read_text())
+    return {}
 
 
-def save_platform(platform: str, cfg: dict, user_id: int):
-    """Сохраняет или обновляет конфиг платформы для пользователя."""
-    with get_db() as conn:
-        conn.execute(
-            "INSERT INTO credentials (user_id, platform, data) VALUES (?,?,?) "
-            "ON CONFLICT(user_id, platform) DO UPDATE SET data=excluded.data",
-            (user_id, platform, json.dumps(cfg)),
-        )
+def save_platform(platform: str, cfg: dict):
+    creds = load_credentials()
+    creds[platform] = cfg
+    CREDENTIALS_FILE.write_text(json.dumps(creds, indent=2, ensure_ascii=False))
 
 
-def clear_platform(platform: str, user_id: int):
-    """Удаляет конфиг платформы для пользователя."""
-    with get_db() as conn:
-        conn.execute(
-            "DELETE FROM credentials WHERE user_id=? AND platform=?",
-            (user_id, platform),
-        )
+def clear_platform(platform: str):
+    creds = load_credentials()
+    creds.pop(platform, None)
+    CREDENTIALS_FILE.write_text(json.dumps(creds, indent=2, ensure_ascii=False))
 
 
-def load_credentials(user_id: int) -> dict:
-    """Загружает все платформы пользователя."""
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT platform, data FROM credentials WHERE user_id=?",
-            (user_id,),
-        ).fetchall()
-        return {row["platform"]: json.loads(row["data"]) for row in rows}
+def get_platform_config(platform: str) -> dict:
+    return load_credentials().get(platform, {})
