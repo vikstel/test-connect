@@ -66,6 +66,15 @@ def index():
     return FileResponse("static/index.html")
 
 
+@app.get("/zen_{token}.html")
+def zen_verification(token: str):
+    """Верификационный файл для Яндекс Дзен"""
+    path = Path(f"static/zen_{token}.html")
+    if path.exists():
+        return FileResponse(str(path))
+    return JSONResponse({"error": "not found"}, status_code=404)
+
+
 @app.get("/api/status")
 def status():
     creds = load_credentials()
