@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from feedgen.feed import FeedGenerator
 from .base import BasePlatform
 
@@ -26,6 +26,7 @@ class ZenPoster(BasePlatform):
         fg = FeedGenerator()
         fg.id(f"{self.base_url}/static/rss.xml")
         fg.title(self.feed_title)
+        fg.description(self.feed_title)  # обязательное поле RSS 2.0
         fg.author({"name": self.author_name})
         fg.link(href=f"{self.base_url}/static/rss.xml", rel="self")
         for post in posts[-50:]:
@@ -33,7 +34,11 @@ class ZenPoster(BasePlatform):
             fe.id(post["id"])
             fe.title(post["title"])
             fe.content(post["content"], type="html")
-            fe.published(post["published"])
+            # feedgen принимает строку ISO 8601 или datetime объект
+            pub = post["published"]
+            if isinstance(pub, str):
+                pub = datetime.fromisoformat(pub)
+            fe.published(pub)
         fg.rss_file(str(RSS_FILE))
 
     def test_connection(self) -> dict:
@@ -48,7 +53,8 @@ class ZenPoster(BasePlatform):
                 "id": f"{self.base_url}/{post_id}",
                 "title": title,
                 "content": f"<p>{text}</p>",
-                "published": datetime.now().isoformat() + "Z"
+                # ISO 8601 с UTC timezone для feedgen
+                "published": datetime.now(timezone.utc).isoformat()
             })
             self._save_posts(posts)
             self._regenerate_rss(posts)
