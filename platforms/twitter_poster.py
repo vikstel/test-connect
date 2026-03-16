@@ -1,24 +1,42 @@
-import tweepy
+import requests
 from .base import BasePlatform
+
+# OAuth 2.0 user access token используется как Bearer token в заголовке
+TWITTER_API = "https://api.twitter.com/2"
 
 
 class TwitterPoster(BasePlatform):
     def __init__(self, access_token: str, **kwargs):
-        # OAuth 2.0 user context — только один токен нужен пользователю
-        self.client = tweepy.Client(access_token=access_token)
+        self.access_token = access_token
+        self.headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
 
     def test_connection(self) -> dict:
         try:
-            me = self.client.get_me()
-            return {"ok": True, "message": f"Twitter: @{me.data.username}"}
+            r = requests.get(f"{TWITTER_API}/users/me", headers=self.headers)
+            data = r.json()
+            if "errors" in data or "error" in data:
+                msg = data.get("errors", [{}])[0].get("message") or data.get("error")
+                return {"ok": False, "message": msg}
+            username = data.get("data", {}).get("username", "unknown")
+            return {"ok": True, "message": f"Twitter: @{username}"}
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
-            # Media upload через v1.1 API требует OAuth 1.0a — не поддерживается в OAuth 2.0 flow
-            # Публикуем текст (изображения требуют переход на OAuth 1.0a / Enterprise)
-            tweet = self.client.create_tweet(text=text)
-            return {"ok": True, "post_id": str(tweet.data["id"])}
+            # Media upload через v1.1 требует OAuth 1.0a — не поддерживается в OAuth 2.0 flow
+            r = requests.post(
+                f"{TWITTER_API}/tweets",
+                headers=self.headers,
+                json={"text": text},
+            )
+            data = r.json()
+            if "errors" in data or "error" in data:
+                msg = data.get("errors", [{}])[0].get("message") or data.get("error")
+                return {"ok": False, "message": msg}
+            return {"ok": True, "post_id": str(data["data"]["id"])}
         except Exception as e:
             return {"ok": False, "message": str(e)}
