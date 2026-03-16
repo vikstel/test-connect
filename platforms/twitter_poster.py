@@ -19,8 +19,10 @@ class TwitterPoster(BasePlatform):
             data = r.json()
             if "errors" in data or "error" in data:
                 msg = data.get("errors", [{}])[0].get("message") or data.get("error")
-                return {"ok": False, "message": msg}
-            username = data.get("data", {}).get("username", "unknown")
+                return {"ok": False, "message": f"{msg} | raw: {data}"}
+            if "data" not in data:
+                return {"ok": False, "message": f"Unexpected response: {data}"}
+            username = data["data"].get("username", "unknown")
             return {"ok": True, "message": f"Twitter: @{username}"}
         except Exception as e:
             return {"ok": False, "message": str(e)}
@@ -37,6 +39,8 @@ class TwitterPoster(BasePlatform):
             if "errors" in data or "error" in data:
                 msg = data.get("errors", [{}])[0].get("message") or data.get("error")
                 return {"ok": False, "message": msg}
+            if "data" not in data:
+                return {"ok": False, "message": f"Unexpected response: {data}"}
             return {"ok": True, "post_id": str(data["data"]["id"])}
         except Exception as e:
             return {"ok": False, "message": str(e)}
