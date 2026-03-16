@@ -14,18 +14,11 @@ class TwitterPoster(BasePlatform):
         }
 
     def test_connection(self) -> dict:
-        try:
-            r = requests.get(f"{TWITTER_API}/users/me", headers=self.headers)
-            data = r.json()
-            if "errors" in data or "error" in data:
-                msg = data.get("errors", [{}])[0].get("message") or data.get("error")
-                return {"ok": False, "message": f"{msg} | raw: {data}"}
-            if "data" not in data:
-                return {"ok": False, "message": f"Unexpected response: {data}"}
-            username = data["data"].get("username", "unknown")
-            return {"ok": True, "message": f"Twitter: @{username}"}
-        except Exception as e:
-            return {"ok": False, "message": str(e)}
+        # GET /users/me недоступен на Free tier (CreditsDepleted)
+        # Проверяем только наличие токена — реальный тест произойдёт при публикации
+        if self.access_token:
+            return {"ok": True, "message": "Twitter токен сохранён (проверка недоступна на Free tier)"}
+        return {"ok": False, "message": "Токен отсутствует"}
 
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
