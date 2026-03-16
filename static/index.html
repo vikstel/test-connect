@@ -382,25 +382,12 @@ const PLATFORMS = {
     name: "X (Twitter)",
     icon: "🐦",
     color: "#1da1f2",
-    fields: [
-      { key: "api_key", label: "API Key", placeholder: "xxxxx" },
-      { key: "api_secret", label: "API Secret", placeholder: "xxxxx" },
-      { key: "access_token", label: "Access Token", placeholder: "xxxxx" },
-      { key: "access_token_secret", label: "Access Token Secret", placeholder: "xxxxx" },
-    ],
+    fields: [],
+    oauthUrl: "/oauth/twitter",
     instruction: `
-      <strong>Регистрация:</strong>
-      <ol>
-        <li><a href="https://developer.x.com/en/portal/petition/essential/basic-info" target="_blank">Зарегистрироваться как разработчик</a> (нужен подтверждённый email и телефон)</li>
-        <li>Создать Project и App: <a href="https://developer.x.com/en/portal/projects-and-apps" target="_blank">Projects & Apps</a> → New Project → New App</li>
-        <li>В настройках App → <strong>Keys and Tokens</strong>:</li>
-        <ul>
-          <li>Скопировать <strong>API Key & Secret</strong> (показываются <u>один раз</u>!)</li>
-          <li>Нажать Generate → <strong>Access Token & Secret</strong></li>
-        </ul>
-        <li><strong>User authentication settings</strong> → включить <strong>Read and Write</strong></li>
-        <li>⚠️ Для загрузки медиа нужен уровень доступа <strong>Basic</strong> (или выше) — Free tier поддерживает только текстовые твиты</li>
-      </ol>
+      Нажмите <strong>«Подключить через X»</strong> — вы будете перенаправлены на страницу авторизации X (Twitter).
+      <br><br>
+      ⚠️ Публикация только текста (без медиа) — ограничение Twitter OAuth 2.0 Free tier.
     `
   },
   zen: {
@@ -445,6 +432,12 @@ async function init() {
   } else if (params.get('ok_error')) {
     history.replaceState({}, '', '/');
     setTimeout(() => showToast('Ошибка подключения OK: ' + params.get('ok_error'), 'error'), 300);
+  } else if (params.get('twitter_connected')) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => showToast('X (Twitter) успешно подключён!', 'ok'), 300);
+  } else if (params.get('twitter_error')) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => showToast('Ошибка подключения Twitter: ' + params.get('twitter_error'), 'error'), 300);
   }
   renderPlatformGrid();
   renderCheckboxes();

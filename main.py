@@ -136,6 +136,7 @@ def delete_job(job_id: str):
 
 VK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/vk/callback"
 OK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/ok/callback"
+TWITTER_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/twitter/callback"
 VK_SCOPE = "90116"  # wall(8192) + photos(4) + video(16384) + offline(65536)
 
 
@@ -322,6 +323,101 @@ def ok_oauth_callback(code: str = None, error: str = None, state: str = None):
             "group_id": group_id,
         })
         return RedirectResponse("/?ok_connected=1")
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
+
+
+_TWITTER_PKCE_FILE = Path("twitter_pkce.json")
+
+
+def _twitter_pkce_save(state: str, code_verifier: str):
+    import json
+    data = {}
+    if _TWITTER_PKCE_FILE.exists():
+        data = json.loads(_TWITTER_PKCE_FILE.read_text())
+    data[state] = code_verifier
+    _TWITTER_PKCE_FILE.write_text(json.dumps(data))
+
+
+def _twitter_pkce_pop(state: str):
+    import json
+    if not _TWITTER_PKCE_FILE.exists():
+        return None
+    data = json.loads(_TWITTER_PKCE_FILE.read_text())
+    verifier = data.pop(state, None)
+    _TWITTER_PKCE_FILE.write_text(json.dumps(data))
+    return verifier
+
+
+@app.get("/oauth/twitter")
+def twitter_oauth_start():
+    import os, secrets, hashlib, base64
+    client_id = os.getenv("TWITTER_CLIENT_ID")
+    if not client_id:
+        return JSONResponse({"error": "TWITTER_CLIENT_ID не найден в .env"}, status_code=400)
+
+    # PKCE: генерируем code_verifier и code_challenge (S256)
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+    state = secrets.token_urlsafe(16)
+    _twitter_pkce_save(state, code_verifier)
+
+    scope = "tweet.read tweet.write users.read offline.access"
+    from urllib.parse import urlencode
+    params = urlencode({
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": TWITTER_REDIRECT_URI,
+        "scope": scope,
+        "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    })
+    return RedirectResponse(f"https://twitter.com/i/oauth2/authorize?{params}")
+
+
+@app.get("/oauth/twitter/callback")
+def twitter_oauth_callback(code: str = None, error: str = None, state: str = None):
+    try:
+        if error:
+            return RedirectResponse(f"/?twitter_error={error}")
+        if not code:
+            return RedirectResponse("/?twitter_error=no_code")
+
+        import os, base64
+        client_id = os.getenv("TWITTER_CLIENT_ID")
+        client_secret = os.getenv("TWITTER_CLIENT_SECRET")
+        if not client_id or not client_secret:
+            return JSONResponse({"error": "TWITTER_CLIENT_ID или TWITTER_CLIENT_SECRET не найдены"}, status_code=500)
+
+        code_verifier = _twitter_pkce_pop(state)
+
+        # Basic Auth для обмена кода
+        credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        r = http_requests.post(
+            "https://api.twitter.com/2/oauth2/token",
+            headers={
+                "Authorization": f"Basic {credentials}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            data={
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": TWITTER_REDIRECT_URI,
+                "code_verifier": code_verifier or "",
+            },
+        )
+        data = r.json()
+
+        if "access_token" not in data:
+            err = data.get("error_description") or data.get("error") or str(data)
+            return JSONResponse({"twitter_token_error": err, "response": data}, status_code=400)
+
+        save_platform("twitter", {"access_token": data["access_token"]})
+        return RedirectResponse("/?twitter_connected=1")
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
