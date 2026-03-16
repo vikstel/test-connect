@@ -8,6 +8,28 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; }
 
+  /* Auth screen */
+  .auth-screen {
+    display: none; position: fixed; inset: 0; background: #0f1117;
+    align-items: center; justify-content: center; z-index: 999;
+  }
+  .auth-screen.active { display: flex; }
+  .auth-box {
+    background: #1a1d2e; border: 1px solid #2a2d3e; border-radius: 16px;
+    padding: 32px; width: 100%; max-width: 380px;
+  }
+  .auth-box h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .auth-box .auth-subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
+  .auth-tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #0f1117; border-radius: 8px; padding: 4px; }
+  .auth-tab {
+    flex: 1; padding: 8px; border: none; border-radius: 6px; cursor: pointer;
+    font-size: 14px; font-weight: 500; transition: all 0.15s;
+    background: transparent; color: #888;
+  }
+  .auth-tab.active { background: #1a1d2e; color: #fff; }
+  .auth-error { color: #f06060; font-size: 13px; margin-bottom: 12px; display: none; }
+  .auth-error.show { display: block; }
+
   header { background: #1a1d2e; border-bottom: 1px solid #2a2d3e; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
   header h1 { font-size: 20px; font-weight: 700; color: #fff; }
   header .subtitle { font-size: 13px; color: #888; }
@@ -190,10 +212,39 @@
 </head>
 <body>
 
+<!-- Auth Screen -->
+<div class="auth-screen active" id="authScreen">
+  <div class="auth-box">
+    <h1>🚀 Auto-Poster</h1>
+    <div class="auth-subtitle">Войдите или создайте аккаунт</div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">Войти</button>
+      <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">Регистрация</button>
+    </div>
+    <div class="auth-error" id="authError"></div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label>Пароль</label>
+      <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter') submitAuth()">
+    </div>
+    <button class="btn btn-primary" style="width:100%;padding:11px;font-size:15px;margin-top:8px" onclick="submitAuth()">
+      <span id="authBtnText">Войти</span>
+    </button>
+  </div>
+</div>
+
 <header>
   <div>
     <h1>🚀 Social Networks Auto-Poster</h1>
     <div class="subtitle">Управление публикациями в социальных сетях</div>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+    <span style="font-size:13px;color:#888" id="userEmail"></span>
+    <button class="btn btn-secondary" style="padding:6px 12px;font-size:13px" onclick="logout()">Выйти</button>
   </div>
 </header>
 
@@ -260,6 +311,70 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ─── Auth ────────────────────────────────────────────────────────
+let currentAuthTab = 'login';
+
+function switchAuthTab(tab) {
+  currentAuthTab = tab;
+  document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
+  document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
+  document.getElementById('authBtnText').textContent = tab === 'login' ? 'Войти' : 'Зарегистрироваться';
+  document.getElementById('authError').classList.remove('show');
+}
+
+async function submitAuth() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  const errEl = document.getElementById('authError');
+  errEl.classList.remove('show');
+
+  if (!email || !password) {
+    errEl.textContent = 'Заполните все поля';
+    errEl.classList.add('show');
+    return;
+  }
+
+  const url = currentAuthTab === 'login' ? '/api/auth/login' : '/api/auth/register';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+
+  if (data.ok) {
+    document.getElementById('userEmail').textContent = data.email;
+    document.getElementById('authScreen').classList.remove('active');
+    init();
+  } else {
+    errEl.textContent = data.message || 'Ошибка';
+    errEl.classList.add('show');
+  }
+}
+
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  document.getElementById('authScreen').classList.add('active');
+  document.getElementById('userEmail').textContent = '';
+  statuses = {};
+  renderPlatformGrid();
+}
+
+async function checkAuth() {
+  try {
+    const res = await fetch('/api/auth/me');
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('userEmail').textContent = data.email;
+      document.getElementById('authScreen').classList.remove('active');
+      return true;
+    }
+  } catch(e) {}
+  document.getElementById('authScreen').classList.add('active');
+  return false;
+}
+
+// ─── Platforms ───────────────────────────────────────────────────
 const PLATFORMS = {
   telegram: {
     name: "Telegram",
@@ -419,6 +534,9 @@ let statuses = {};
 
 // Init
 async function init() {
+  const authed = await checkAuth();
+  if (!authed) return;
+
   const params = new URLSearchParams(window.location.search);
   if (params.get('vk_connected')) {
     history.replaceState({}, '', '/');

@@ -1,104 +1,41 @@
-import os
-from pathlib import Path
-from dotenv import load_dotenv, set_key, unset_key
-
-ENV_FILE = Path(".env")
-SCHEDULE_FILE = Path("schedule.json")
-
-# Mapping: platform -> {field_name -> ENV_KEY}
-PLATFORM_ENV_KEYS = {
-    "telegram": {
-        "bot_token": "TELEGRAM_BOT_TOKEN",
-        "chat_id": "TELEGRAM_CHAT_ID",
-    },
-    "vk": {
-        "access_token": "VK_ACCESS_TOKEN",
-        "target_id": "VK_TARGET_ID",
-    },
-    "ok": {
-        "access_token": "OK_ACCESS_TOKEN",
-        "session_secret_key": "OK_SESSION_SECRET_KEY",
-        "application_key": "OK_APPLICATION_KEY",
-        "secret_key": "OK_SECRET_KEY",
-        "group_id": "OK_GROUP_ID",
-    },
-    "facebook": {
-        "page_access_token": "FACEBOOK_PAGE_ACCESS_TOKEN",
-        "page_id": "FACEBOOK_PAGE_ID",
-    },
-    "instagram": {
-        "access_token": "INSTAGRAM_ACCESS_TOKEN",
-        "user_id": "INSTAGRAM_USER_ID",
-    },
-    "twitter": {
-        "api_key": "TWITTER_API_KEY",
-        "api_secret": "TWITTER_API_SECRET",
-        "access_token": "TWITTER_ACCESS_TOKEN",
-        "access_token_secret": "TWITTER_ACCESS_TOKEN_SECRET",
-    },
-    "zen": {
-        "feed_title": "ZEN_FEED_TITLE",
-        "author_name": "ZEN_AUTHOR_NAME",
-    },
-}
+import json
+from database import get_db
 
 
-def _ensure_env_file():
-    if not ENV_FILE.exists():
-        ENV_FILE.write_text("")
+def get_platform_config(platform: str, user_id: int) -> dict:
+    """Возвращает конфиг платформы для конкретного пользователя."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT data FROM credentials WHERE user_id=? AND platform=?",
+            (user_id, platform),
+        ).fetchone()
+        return json.loads(row["data"]) if row else {}
 
 
-def load_credentials() -> dict:
-    _ensure_env_file()
-    load_dotenv(ENV_FILE, override=True)
-    result = {}
-    for platform, keys in PLATFORM_ENV_KEYS.items():
-        cfg = {}
-        for field, env_key in keys.items():
-            val = os.getenv(env_key)
-            if val:
-                cfg[field] = val
-        if cfg:
-            result[platform] = cfg
-    return result
+def save_platform(platform: str, cfg: dict, user_id: int):
+    """Сохраняет или обновляет конфиг платформы для пользователя."""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO credentials (user_id, platform, data) VALUES (?,?,?) "
+            "ON CONFLICT(user_id, platform) DO UPDATE SET data=excluded.data",
+            (user_id, platform, json.dumps(cfg)),
+        )
 
 
-def save_credentials(data: dict):
-    """data = full credentials dict (all platforms)"""
-    _ensure_env_file()
-    # Write only the platforms present in data; clear removed ones
-    for platform, keys in PLATFORM_ENV_KEYS.items():
-        cfg = data.get(platform, {})
-        for field, env_key in keys.items():
-            if cfg.get(field):
-                set_key(str(ENV_FILE), env_key, cfg[field])
-            else:
-                unset_key(str(ENV_FILE), env_key)
+def clear_platform(platform: str, user_id: int):
+    """Удаляет конфиг платформы для пользователя."""
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM credentials WHERE user_id=? AND platform=?",
+            (user_id, platform),
+        )
 
 
-def save_platform(platform: str, cfg: dict):
-    """Save a single platform config."""
-    _ensure_env_file()
-    keys = PLATFORM_ENV_KEYS.get(platform, {})
-    for field, env_key in keys.items():
-        if cfg.get(field):
-            set_key(str(ENV_FILE), env_key, cfg[field])
-
-
-def clear_platform(platform: str):
-    """Remove all keys for a platform."""
-    _ensure_env_file()
-    keys = PLATFORM_ENV_KEYS.get(platform, {})
-    for env_key in keys.values():
-        unset_key(str(ENV_FILE), env_key)
-
-
-def get_platform_config(platform: str) -> dict:
-    load_dotenv(ENV_FILE, override=True)
-    keys = PLATFORM_ENV_KEYS.get(platform, {})
-    cfg = {}
-    for field, env_key in keys.items():
-        val = os.getenv(env_key)
-        if val:
-            cfg[field] = val
-    return cfg
+def load_credentials(user_id: int) -> dict:
+    """Загружает все платформы пользователя."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT platform, data FROM credentials WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+        return {row["platform"]: json.loads(row["data"]) for row in rows}

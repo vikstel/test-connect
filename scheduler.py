@@ -18,11 +18,12 @@ def _save_jobs(jobs: list):
     SCHEDULE_FILE.write_text(json.dumps(jobs, ensure_ascii=False, indent=2))
 
 
-def schedule_post(job_id: str, run_at: datetime, platforms: list, text: str, media_path: str = None):
+def schedule_post(job_id: str, run_at: datetime, platforms: list, text: str, user_id: int, media_path: str = None):
     from main import execute_post
 
     def job():
-        execute_post(platforms, text, media_path)
+        execute_post(platforms, text, user_id, media_path)
+        # Удаляем из списка после выполнения
         jobs = [j for j in _load_jobs() if j["id"] != job_id]
         _save_jobs(jobs)
 
@@ -30,23 +31,29 @@ def schedule_post(job_id: str, run_at: datetime, platforms: list, text: str, med
     jobs = _load_jobs()
     jobs.append({
         "id": job_id,
+        "user_id": user_id,
         "run_at": run_at.isoformat(),
         "platforms": platforms,
         "text": text[:100],
-        "status": "pending"
+        "status": "pending",
     })
     _save_jobs(jobs)
 
 
-def cancel_job(job_id: str) -> bool:
+def cancel_job(job_id: str, user_id: int) -> bool:
     try:
+        # Проверяем что задача принадлежит этому пользователю
+        jobs = _load_jobs()
+        job = next((j for j in jobs if j["id"] == job_id and j.get("user_id") == user_id), None)
+        if not job:
+            return False
         scheduler.remove_job(job_id)
-        jobs = [j for j in _load_jobs() if j["id"] != job_id]
-        _save_jobs(jobs)
+        _save_jobs([j for j in jobs if j["id"] != job_id])
         return True
     except Exception:
         return False
 
 
-def list_jobs() -> list:
-    return _load_jobs()
+def list_jobs(user_id: int) -> list:
+    """Возвращает задачи только конкретного пользователя."""
+    return [j for j in _load_jobs() if j.get("user_id") == user_id]
