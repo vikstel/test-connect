@@ -39,6 +39,7 @@ PLATFORM_MAP = {
 VK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/vk/callback"
 OK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/ok/callback"
 TWITTER_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/twitter/callback"
+FACEBOOK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/facebook/callback"
 VK_SCOPE = "90116"  # wall(8192) + photos(4) + video(16384) + offline(65536)
 
 
@@ -359,6 +360,133 @@ def twitter_oauth_callback(code: str = None, error: str = None, state: str = Non
     except Exception as e:
         import traceback
         return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
+
+
+# ─── Facebook OAuth ───────────────────────────────────────────────
+_FB_STATE_FILE = Path("fb_state.json")
+
+
+def _fb_state_save(state: str):
+    """Сохраняем state для CSRF-защиты"""
+    data = {}
+    if _FB_STATE_FILE.exists():
+        data = json.loads(_FB_STATE_FILE.read_text())
+    data[state] = True
+    _FB_STATE_FILE.write_text(json.dumps(data))
+
+
+def _fb_state_pop(state: str) -> bool:
+    """Проверяем и удаляем state"""
+    if not _FB_STATE_FILE.exists():
+        return False
+    data = json.loads(_FB_STATE_FILE.read_text())
+    found = data.pop(state, False)
+    _FB_STATE_FILE.write_text(json.dumps(data))
+    return bool(found)
+
+
+@app.get("/oauth/facebook")
+def facebook_oauth_start():
+    """Старт Facebook OAuth — редирект на страницу авторизации"""
+    app_id = os.getenv("FB_APP_ID")
+    if not app_id:
+        return JSONResponse({"error": "FB_APP_ID не найден в .env"}, status_code=400)
+    state = secrets.token_urlsafe(16)
+    _fb_state_save(state)
+    from urllib.parse import urlencode
+    params = urlencode({
+        "client_id": app_id,
+        "redirect_uri": FACEBOOK_REDIRECT_URI,
+        "scope": "pages_show_list,pages_manage_posts,pages_read_engagement",
+        "response_type": "code",
+        "state": state,
+    })
+    return RedirectResponse(f"https://www.facebook.com/v25.0/dialog/oauth?{params}")
+
+
+@app.get("/oauth/facebook/callback")
+def facebook_oauth_callback(code: str = None, error: str = None, state: str = None):
+    """Обработка колбэка от Facebook"""
+    try:
+        if error:
+            return RedirectResponse(f"/?fb_error={error}")
+        if not code:
+            return RedirectResponse("/?fb_error=no_code")
+
+        # CSRF-проверка state
+        if state and not _fb_state_pop(state):
+            return RedirectResponse("/?fb_error=invalid_state")
+
+        app_id = os.getenv("FB_APP_ID")
+        app_secret = os.getenv("FB_APP_SECRET")
+
+        # Шаг 1: меняем code на краткосрочный User Access Token
+        r = http_requests.get("https://graph.facebook.com/v25.0/oauth/access_token", params={
+            "client_id": app_id,
+            "redirect_uri": FACEBOOK_REDIRECT_URI,
+            "client_secret": app_secret,
+            "code": code,
+        })
+        token_data = r.json()
+        if "access_token" not in token_data:
+            err = token_data.get("error", {}).get("message") or str(token_data)
+            return JSONResponse({"fb_token_error": err, "response": token_data}, status_code=400)
+        short_token = token_data["access_token"]
+
+        # Шаг 2: меняем на долгоживущий токен (60 дней)
+        r2 = http_requests.get("https://graph.facebook.com/v25.0/oauth/access_token", params={
+            "grant_type": "fb_exchange_token",
+            "client_id": app_id,
+            "client_secret": app_secret,
+            "fb_exchange_token": short_token,
+        })
+        long_token_data = r2.json()
+        user_token = long_token_data.get("access_token", short_token)
+
+        # Шаг 3: получаем список страниц пользователя + Page Access Tokens
+        r3 = http_requests.get("https://graph.facebook.com/v25.0/me/accounts", params={
+            "access_token": user_token,
+            "fields": "id,name,access_token,tasks",
+        })
+        pages_data = r3.json()
+        pages = pages_data.get("data", [])
+
+        if not pages:
+            return RedirectResponse("/?fb_error=no_pages")
+
+        # Если страница одна — сохраняем сразу
+        if len(pages) == 1:
+            page = pages[0]
+            save_platform("facebook", {
+                "page_access_token": page["access_token"],
+                "page_id": page["id"],
+            })
+            return RedirectResponse("/?fb_connected=1")
+
+        # Если несколько страниц — передаём список в URL для выбора в UI
+        import urllib.parse
+        pages_json = json.dumps([{"id": p["id"], "name": p["name"], "token": p["access_token"]} for p in pages])
+        encoded = base64.urlsafe_b64encode(pages_json.encode()).decode()
+        return RedirectResponse(f"/?fb_select={urllib.parse.quote(encoded)}")
+
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
+
+
+@app.post("/api/facebook/select-page")
+async def facebook_select_page(request: Request):
+    """Сохранение выбранной страницы Facebook"""
+    data = await request.json()
+    page_id = data.get("page_id")
+    page_token = data.get("page_token")
+    if not page_id or not page_token:
+        return JSONResponse({"ok": False, "message": "Не указаны page_id или page_token"}, status_code=400)
+    save_platform("facebook", {
+        "page_access_token": page_token,
+        "page_id": page_id,
+    })
+    return {"ok": True}
 
 
 if __name__ == "__main__":

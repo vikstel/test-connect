@@ -259,6 +259,19 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Facebook Page Select Modal -->
+<div class="modal-overlay" id="fbPageModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('fbPageModal')">×</button>
+    <h2>Выберите страницу Facebook</h2>
+    <div class="modal-subtitle">Выберите, от имени какой страницы публиковать посты</div>
+    <div id="fbPagesList"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeModal('fbPageModal')">Отмена</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const PLATFORMS = {
   telegram: {
@@ -339,21 +352,21 @@ const PLATFORMS = {
     name: "Facebook",
     icon: "📘",
     color: "#1877f2",
-    fields: [
-      { key: "page_access_token", label: "Page Access Token", placeholder: "EAAxxxxx" },
-      { key: "page_id", label: "Page ID", placeholder: "123456789012345" },
-    ],
+    fields: [],
+    oauthUrl: "/oauth/facebook",
     instruction: `
-      <strong>Как получить токены:</strong>
-      <ol>
-        <li>Создать приложение: <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a> → Create App → тип <strong>Business</strong></li>
-        <li>Открыть <a href="https://developers.facebook.com/tools/explorer" target="_blank">Graph Explorer</a></li>
-        <li>Выбрать своё приложение → выдать permissions: <code>pages_manage_posts</code>, <code>pages_read_engagement</code></li>
-        <li>Нажать <strong>Generate Access Token</strong></li>
-        <li>Выполнить запрос <code>GET /me/accounts</code> → найти страницу → скопировать <code>id</code> (Page ID) и <code>access_token</code></li>
-      </ol>
+      Нажмите <strong>«Подключить через Facebook»</strong> — вы будете перенаправлены на страницу авторизации Facebook.
+      <br><br>
+      После авторизации выберите страницу, от имени которой хотите публиковать посты.
+      <br><br>
+      <strong>Требования:</strong>
+      <ul>
+        <li>Нужна <strong>Facebook Page</strong> (не личный профиль)</li>
+        <li>Вы должны быть <strong>администратором</strong> страницы</li>
+      </ul>
       <br>
-      ⚠️ User Access Token краткосрочный (~1ч). Для постоянной работы обменяйте на Long-Lived Token.
+      ⚠️ В режиме разработки приложения работает только для тестовых пользователей.
+      Для публичного использования требуется App Review.
     `
   },
   instagram: {
@@ -438,6 +451,22 @@ async function init() {
   } else if (params.get('twitter_error')) {
     history.replaceState({}, '', '/');
     setTimeout(() => showToast('Ошибка подключения Twitter: ' + params.get('twitter_error'), 'error'), 300);
+  } else if (params.get('fb_connected')) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => showToast('Facebook успешно подключён!', 'ok'), 300);
+  } else if (params.get('fb_error')) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => showToast('Ошибка подключения Facebook: ' + params.get('fb_error'), 'error'), 300);
+  } else if (params.get('fb_select')) {
+    // Несколько страниц — показываем модалку выбора
+    history.replaceState({}, '', '/');
+    try {
+      const decoded = atob(params.get('fb_select').replace(/-/g, '+').replace(/_/g, '/'));
+      const pages = JSON.parse(decoded);
+      setTimeout(() => openFbPageSelect(pages), 300);
+    } catch(e) {
+      setTimeout(() => showToast('Ошибка при получении списка страниц Facebook', 'error'), 300);
+    }
   }
   renderPlatformGrid();
   renderCheckboxes();
@@ -523,10 +552,17 @@ function openConnect(platform) {
   `).join('');
 
   const saveBtn = document.querySelector('#connectModal .modal-actions .btn-primary');
+  const oauthLabels = {
+    ok: '🔗 Подключить через OK',
+    facebook: '🔗 Подключить через Facebook',
+    twitter: '🔗 Подключить через X (Twitter)',
+  };
   if (p.oauthFlow) {
     saveBtn.textContent = '🔗 Сохранить и войти через VK';
+  } else if (p.oauthUrl && oauthLabels[platform]) {
+    saveBtn.textContent = oauthLabels[platform];
   } else if (p.oauthUrl) {
-    saveBtn.textContent = `🔗 Подключить через OK`;
+    saveBtn.textContent = `🔗 Подключить через OAuth`;
   } else {
     saveBtn.textContent = 'Сохранить';
   }
@@ -700,6 +736,36 @@ function showToast(msg, type = 'ok') {
   t.textContent = msg;
   t.className = `toast ${type} show`;
   setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// Facebook: выбор страницы из списка
+function openFbPageSelect(pages) {
+  const list = document.getElementById('fbPagesList');
+  list.innerHTML = pages.map(p => `
+    <button class="btn btn-secondary" style="width:100%;text-align:left;margin-bottom:8px;padding:10px 14px;"
+      onclick="selectFbPage('${p.id}', '${encodeURIComponent(p.token)}', '${p.name.replace(/'/g, "\\'")}')">
+      📘 <strong>${p.name}</strong><br>
+      <span style="font-size:11px;color:#888">ID: ${p.id}</span>
+    </button>
+  `).join('');
+  document.getElementById('fbPageModal').classList.add('active');
+}
+
+async function selectFbPage(pageId, encodedToken, pageName) {
+  const pageToken = decodeURIComponent(encodedToken);
+  const res = await fetch('/api/facebook/select-page', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ page_id: pageId, page_token: pageToken }),
+  });
+  const data = await res.json();
+  closeModal('fbPageModal');
+  if (data.ok) {
+    showToast(`Facebook подключён: ${pageName}`, 'ok');
+    await loadStatuses();
+  } else {
+    showToast('Ошибка сохранения страницы', 'error');
+  }
 }
 
 // Close modal on overlay click
