@@ -331,7 +331,7 @@ def twitter_oauth_start():
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     })
-    return RedirectResponse(f"https://twitter.com/i/oauth2/authorize?{params}")
+    return RedirectResponse(f"https://x.com/i/oauth2/authorize?{params}")
 
 
 @app.get("/oauth/twitter/callback")
