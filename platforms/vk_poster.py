@@ -9,13 +9,6 @@ class VKPoster(BasePlatform):
     def __init__(self, access_token: str, target_id: str, **kwargs):
         self.token = access_token
         self.owner_id = int(target_id)
-        self._is_group_token = None  # detected lazily
-
-    def _detect_token_type(self):
-        if self._is_group_token is None:
-            data = self._call("users.get")
-            self._is_group_token = not (data.get("response") and data["response"])
-        return self._is_group_token
 
     def _call(self, method: str, **params) -> dict:
         params.update({"access_token": self.token, "v": VK_V})
@@ -24,58 +17,85 @@ class VKPoster(BasePlatform):
 
     def test_connection(self) -> dict:
         try:
+            # Community token не поддерживает users.get — сразу проверяем группу
+            if self.owner_id < 0:
+                data = self._call("groups.getById", group_id=abs(self.owner_id))
+                if "response" in data:
+                    resp = data["response"]
+                    # API 5.199 возвращает {"groups": [...]}, старые версии — просто [...]
+                    groups = resp.get("groups", resp) if isinstance(resp, dict) else resp
+                    if groups:
+                        g = groups[0]
+                        return {"ok": True, "message": f"Группа «{g['name']}»"}
+                err = data.get("error", {}).get("error_msg", "Неизвестная ошибка")
+                return {"ok": False, "message": err}
+            # User token — проверяем пользователя
             data = self._call("users.get")
             if "response" in data and data["response"]:
                 u = data["response"][0]
                 return {"ok": True, "message": f"Подключён как {u['first_name']} {u['last_name']}"}
-            # Group token — check group info
-            data = self._call("groups.getById", group_id=abs(self.owner_id))
-            if "response" in data:
-                resp = data["response"]
-                # API 5.199 returns {"groups": [...]} , older returns [...]
-                groups = resp.get("groups", resp) if isinstance(resp, dict) else resp
-                if groups:
-                    g = groups[0]
-                    return {"ok": True, "message": f"Группа «{g['name']}»"}
             err = data.get("error", {}).get("error_msg", "Неизвестная ошибка")
             return {"ok": False, "message": err}
         except Exception as e:
             return {"ok": False, "message": str(e)}
 
+    def _upload_photo(self, media_path: str) -> str | None:
+        """Загружает фото на стену группы, возвращает строку attachment типа photo-ID_ID"""
+        # Шаг 1: получить URL для загрузки
+        server_resp = self._call("photos.getWallUploadServer", group_id=abs(self.owner_id))
+        if "error" in server_resp:
+            err = server_resp["error"]
+            raise Exception(f"getWallUploadServer [{err.get('error_code')}] {err.get('error_msg')}")
+
+        upload_url = server_resp["response"]["upload_url"]
+
+        # Шаг 2: загрузить файл
+        with open(media_path, "rb") as f:
+            uploaded = requests.post(upload_url, files={"photo": f}).json()
+
+        # Шаг 3: сохранить фото
+        save_resp = self._call(
+            "photos.saveWallPhoto",
+            group_id=abs(self.owner_id),
+            photo=uploaded["photo"],
+            server=uploaded["server"],
+            hash=uploaded["hash"],
+        )
+        if "error" in save_resp:
+            err = save_resp["error"]
+            raise Exception(f"saveWallPhoto [{err.get('error_code')}] {err.get('error_msg')}")
+
+        p = save_resp["response"][0]
+        # owner_id уже отрицательный для групп (например -123456)
+        return f"photo{p['owner_id']}_{p['id']}"
+
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
             attachments = []
-            photo_skipped = False
-            if media_path and media_type == "photo":
-                server_resp = self._call("photos.getWallUploadServer", group_id=abs(self.owner_id))
-                if "error" in server_resp:
-                    err = server_resp["error"]
-                    photo_skipped = f"[{err.get('error_code')}] {err.get('error_msg')}"
-                else:
-                    upload_url = server_resp["response"]["upload_url"]
-                    with open(media_path, "rb") as f:
-                        uploaded = requests.post(upload_url, files={"photo": f}).json()
-                    save_resp = self._call("photos.saveWallPhoto",
-                        group_id=abs(self.owner_id),
-                        photo=uploaded["photo"],
-                        server=uploaded["server"],
-                        hash=uploaded["hash"],
-                    )
-                    if "error" in save_resp:
-                        err = save_resp["error"]
-                        photo_skipped = f"saveWallPhoto [{err.get('error_code')}] {err.get('error_msg')}"
-                    else:
-                        p = save_resp["response"][0]
-                        attachments.append(f"photo{p['owner_id']}_{p['id']}")
+            photo_skipped = None
 
-            params = dict(owner_id=self.owner_id, message=text, attachments=",".join(attachments))
-            if self.owner_id < 0 and self._detect_token_type():
+            if media_path and media_type == "photo":
+                try:
+                    attachment = self._upload_photo(media_path)
+                    attachments.append(attachment)
+                except Exception as e:
+                    photo_skipped = str(e)
+
+            params = dict(
+                owner_id=self.owner_id,
+                message=text,                     # текст + эмодзи — Unicode, VK принимает без проблем
+                attachments=",".join(attachments),
+            )
+
+            # from_group=1 — публикуем от имени группы (community token + owner_id < 0)
+            if self.owner_id < 0:
                 params["from_group"] = 1
 
             result = self._call("wall.post", **params)
             if "error" in result:
                 err = result["error"]
                 return {"ok": False, "message": f"[{err.get('error_code')}] {err.get('error_msg')}"}
+
             msg = "Опубликовано" + (f" (фото пропущено: {photo_skipped})" if photo_skipped else "")
             return {"ok": True, "post_id": str(result["response"]["post_id"]), "message": msg}
         except Exception as e:
