@@ -153,25 +153,33 @@ def delete_job(job_id: str):
 _VK_PKCE_FILE = Path("vk_pkce.json")
 
 
-def _pkce_save(state: str, code_verifier: str):
+def _pkce_save(state: str, code_verifier: str, target_id: str = ""):
+    """Сохраняем PKCE verifier + target_id по state"""
     data = {}
     if _VK_PKCE_FILE.exists():
         data = json.loads(_VK_PKCE_FILE.read_text())
-    data[state] = code_verifier
+    data[state] = {"verifier": code_verifier, "target_id": target_id}
     _VK_PKCE_FILE.write_text(json.dumps(data))
 
 
 def _pkce_pop(state: str):
+    """Извлекаем и удаляем запись по state, возвращаем (verifier, target_id)"""
     if not _VK_PKCE_FILE.exists():
-        return None
+        return None, ""
     data = json.loads(_VK_PKCE_FILE.read_text())
-    verifier = data.pop(state, None)
+    entry = data.pop(state, None)
     _VK_PKCE_FILE.write_text(json.dumps(data))
-    return verifier
+    if entry is None:
+        return None, ""
+    # Поддержка старого формата (строка) и нового (dict)
+    if isinstance(entry, str):
+        return entry, ""
+    return entry.get("verifier"), entry.get("target_id", "")
 
 
 @app.get("/oauth/vk")
-def vk_oauth_start():
+def vk_oauth_start(target_id: str = ""):
+    """Старт VK OAuth — принимает target_id (ID группы куда постить)"""
     app_id = os.getenv("VK_APP_ID")
     if not app_id:
         return JSONResponse({"error": "VK_APP_ID не найден в .env"}, status_code=400)
@@ -180,7 +188,7 @@ def vk_oauth_start():
         hashlib.sha256(code_verifier.encode()).digest()
     ).rstrip(b"=").decode()
     state = secrets.token_urlsafe(16)
-    _pkce_save(state, code_verifier)
+    _pkce_save(state, code_verifier, target_id)
     url = (
         f"https://id.vk.ru/authorize"
         f"?client_id={app_id}"
@@ -205,7 +213,7 @@ def vk_oauth_callback(
         if not code:
             return RedirectResponse("/?vk_error=no_code")
         app_id = os.getenv("VK_APP_ID")
-        code_verifier = _pkce_pop(state)
+        code_verifier, target_id = _pkce_pop(state)
         query_params = {
             "grant_type": "authorization_code",
             "redirect_uri": VK_REDIRECT_URI,
@@ -218,7 +226,11 @@ def vk_oauth_callback(
         r = http_requests.post("https://id.vk.ru/oauth2/auth", params=query_params, data={"code": code})
         data = r.json()
         if "access_token" in data:
-            save_platform("vk", {"access_token": data["access_token"]})
+            # Сохраняем access_token + target_id (ID группы, переданный через state)
+            vk_cfg = {"access_token": data["access_token"]}
+            if target_id:
+                vk_cfg["target_id"] = target_id
+            save_platform("vk", vk_cfg)
             return RedirectResponse("/?vk_connected=1")
         err = data.get("error_description") or data.get("error") or str(data)
         return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
