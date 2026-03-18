@@ -149,94 +149,96 @@ def delete_job(job_id: str):
     return {"ok": cancel_job(job_id)}
 
 
-# ─── VK OAuth ────────────────────────────────────────────────────
-_VK_PKCE_FILE = Path("vk_pkce.json")
-
-
-def _pkce_save(state: str, code_verifier: str, target_id: str = ""):
-    """Сохраняем PKCE verifier + target_id по state"""
-    data = {}
-    if _VK_PKCE_FILE.exists():
-        data = json.loads(_VK_PKCE_FILE.read_text())
-    data[state] = {"verifier": code_verifier, "target_id": target_id}
-    _VK_PKCE_FILE.write_text(json.dumps(data))
-
-
-def _pkce_pop(state: str):
-    """Извлекаем и удаляем запись по state, возвращаем (verifier, target_id)"""
-    if not _VK_PKCE_FILE.exists():
-        return None, ""
-    data = json.loads(_VK_PKCE_FILE.read_text())
-    entry = data.pop(state, None)
-    _VK_PKCE_FILE.write_text(json.dumps(data))
-    if entry is None:
-        return None, ""
-    # Поддержка старого формата (строка) и нового (dict)
-    if isinstance(entry, str):
-        return entry, ""
-    return entry.get("verifier"), entry.get("target_id", "")
-
+# ─── VK OAuth (Implicit Flow через oauth.vk.com) ─────────────────
+# VK ID OAuth 2.1 (id.vk.ru) даёт токен который НЕ работает с wall.post [1051].
+# Standalone Implicit Flow (oauth.vk.com) даёт токен поддерживающий wall.post + photos.
 
 @app.get("/oauth/vk")
 def vk_oauth_start(target_id: str = ""):
-    """Старт VK OAuth — принимает target_id (ID группы куда постить)"""
+    """Редирект на VK Implicit Flow. target_id передаётся через state."""
     app_id = os.getenv("VK_APP_ID")
     if not app_id:
         return JSONResponse({"error": "VK_APP_ID не найден в .env"}, status_code=400)
-    code_verifier = secrets.token_urlsafe(64)
-    code_challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(code_verifier.encode()).digest()
-    ).rstrip(b"=").decode()
-    state = secrets.token_urlsafe(16)
-    _pkce_save(state, code_verifier, target_id)
-    url = (
-        f"https://id.vk.ru/authorize"
-        f"?client_id={app_id}"
-        f"&redirect_uri={VK_REDIRECT_URI}"
-        f"&response_type=code"
-        f"&scope={VK_SCOPE}"
-        f"&state={state}"
-        f"&code_challenge={code_challenge}"
-        f"&code_challenge_method=S256"
-    )
-    return RedirectResponse(url)
+    from urllib.parse import urlencode, quote
+    # state кодируем как "target_id:random" чтобы передать target_id через VK state
+    random_part = secrets.token_urlsafe(16)
+    state = f"{quote(target_id, safe='')}:{random_part}"
+    params = urlencode({
+        "client_id": app_id,
+        "display": "page",
+        "redirect_uri": VK_REDIRECT_URI,
+        "scope": "wall,photos,offline",
+        "response_type": "token",   # Implicit Flow — токен приходит в URL-фрагменте
+        "v": "5.131",
+        "state": state,
+    })
+    return RedirectResponse(f"https://oauth.vk.com/authorize?{params}")
 
 
 @app.get("/oauth/vk/callback")
-def vk_oauth_callback(
-    code: str = None, error: str = None, error_description: str = None,
-    state: str = None, device_id: str = None,
-):
-    try:
-        if error:
-            return RedirectResponse(f"/?vk_error={error_description or error}")
-        if not code:
-            return RedirectResponse("/?vk_error=no_code")
-        app_id = os.getenv("VK_APP_ID")
-        code_verifier, target_id = _pkce_pop(state)
-        query_params = {
-            "grant_type": "authorization_code",
-            "redirect_uri": VK_REDIRECT_URI,
-            "client_id": app_id,
-            "device_id": device_id,
-            "state": state,
-        }
-        if code_verifier:
-            query_params["code_verifier"] = code_verifier
-        r = http_requests.post("https://id.vk.ru/oauth2/auth", params=query_params, data={"code": code})
-        data = r.json()
-        if "access_token" in data:
-            # Сохраняем access_token + target_id (ID группы, переданный через state)
-            vk_cfg = {"access_token": data["access_token"]}
-            if target_id:
-                vk_cfg["target_id"] = target_id
-            save_platform("vk", vk_cfg)
-            return RedirectResponse("/?vk_connected=1")
-        err = data.get("error_description") or data.get("error") or str(data)
-        return JSONResponse({"vk_token_error": err, "response": data}, status_code=400)
-    except Exception as e:
-        import traceback
-        return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
+def vk_oauth_callback_page():
+    """
+    Callback-страница для Implicit Flow.
+    Токен приходит в URL-фрагменте (#access_token=...) — браузер его видит, сервер нет.
+    Страница читает фрагмент через JS и сохраняет токен через /api/vk/save-token.
+    """
+    html = """<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>VK Auth</title></head>
+<body>
+<script>
+(function() {
+  var hash = location.hash.substring(1);
+  var params = {};
+  hash.split('&').forEach(function(p) {
+    var kv = p.split('=');
+    params[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
+  });
+
+  var token = params['access_token'];
+  var state = params['state'] || '';
+  // state формат: "target_id:random"
+  var parts = state.split(':');
+  var targetId = parts[0] || '';
+
+  if (!token) {
+    location.href = '/?vk_error=' + encodeURIComponent(params['error_description'] || params['error'] || 'no_token');
+    return;
+  }
+
+  fetch('/api/vk/save-token', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({access_token: token, target_id: targetId})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) location.href = '/?vk_connected=1';
+    else location.href = '/?vk_error=' + encodeURIComponent(d.message || 'save_error');
+  })
+  .catch(function() { location.href = '/?vk_error=fetch_error'; });
+})();
+</script>
+<p>Авторизация VK...</p>
+</body>
+</html>"""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(html)
+
+
+@app.post("/api/vk/save-token")
+async def vk_save_token(request: Request):
+    """Сохраняет VK Implicit Flow токен + target_id"""
+    data = await request.json()
+    token = data.get("access_token")
+    target_id = data.get("target_id", "")
+    if not token:
+        return JSONResponse({"ok": False, "message": "Нет токена"}, status_code=400)
+    vk_cfg = {"access_token": token}
+    if target_id:
+        vk_cfg["target_id"] = target_id
+    save_platform("vk", vk_cfg)
+    return {"ok": True}
 
 
 # ─── OK OAuth ────────────────────────────────────────────────────
