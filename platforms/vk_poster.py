@@ -17,24 +17,30 @@ class VKPoster(BasePlatform):
 
     def test_connection(self) -> dict:
         try:
-            # Community token не поддерживает users.get — сразу проверяем группу
+            # Проверяем пользователя (user token via OAuth)
+            user_data = self._call("users.get")
+            user_ok = "response" in user_data and user_data["response"]
+
+            # Проверяем доступность группы
             if self.owner_id < 0:
-                data = self._call("groups.getById", group_id=abs(self.owner_id))
-                if "response" in data:
-                    resp = data["response"]
-                    # API 5.199 возвращает {"groups": [...]}, старые версии — просто [...]
+                group_data = self._call("groups.getById", group_id=abs(self.owner_id))
+                if "response" in group_data:
+                    resp = group_data["response"]
                     groups = resp.get("groups", resp) if isinstance(resp, dict) else resp
                     if groups:
                         g = groups[0]
-                        return {"ok": True, "message": f"Группа «{g['name']}»"}
-                err = data.get("error", {}).get("error_msg", "Неизвестная ошибка")
+                        user_info = ""
+                        if user_ok:
+                            u = user_data["response"][0]
+                            user_info = f" | {u['first_name']} {u['last_name']}"
+                        return {"ok": True, "message": f"Группа «{g['name']}»{user_info}"}
+                err = group_data.get("error", {}).get("error_msg", "Группа недоступна")
                 return {"ok": False, "message": err}
-            # User token — проверяем пользователя
-            data = self._call("users.get")
-            if "response" in data and data["response"]:
-                u = data["response"][0]
+
+            if user_ok:
+                u = user_data["response"][0]
                 return {"ok": True, "message": f"Подключён как {u['first_name']} {u['last_name']}"}
-            err = data.get("error", {}).get("error_msg", "Неизвестная ошибка")
+            err = user_data.get("error", {}).get("error_msg", "Неизвестная ошибка")
             return {"ok": False, "message": err}
         except Exception as e:
             return {"ok": False, "message": str(e)}
@@ -83,13 +89,11 @@ class VKPoster(BasePlatform):
 
             params = dict(
                 owner_id=self.owner_id,
-                message=text,                     # текст + эмодзи — Unicode, VK принимает без проблем
+                message=text,  # текст + эмодзи — Unicode, VK принимает нативно
                 attachments=",".join(attachments),
             )
-
-            # from_group=1 — публикуем от имени группы (community token + owner_id < 0)
-            if self.owner_id < 0:
-                params["from_group"] = 1
+            # from_group НЕ передаём — user token постит от имени пользователя на стену группы.
+            # from_group=1 требует прав администратора И вызывает [1051] при user token.
 
             result = self._call("wall.post", **params)
             if "error" in result:

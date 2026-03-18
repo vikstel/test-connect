@@ -302,19 +302,23 @@ const PLATFORMS = {
     name: "VKontakte",
     icon: "🔵",
     color: "#4a76a8",
+    oauthUrl: "/oauth/vk",
+    oauthParamName: "target_id",
     fields: [
-      { key: "access_token", label: "Community Token", placeholder: "vk1.a.xxxxx" },
       { key: "target_id", label: "ID группы/паблика (куда постить)", placeholder: "-123456789" },
     ],
     instruction: `
-      <strong>Получить Community Token:</strong>
+      <strong>Как подключить (текст + фото + эмодзи):</strong>
       <ol>
-        <li>Группа → <strong>Управление → Настройки → Работа с API</strong></li>
-        <li><strong>Создать ключ</strong> → ✅ Управление сообществом + ✅ Стена + ✅ Фотографии</li>
-        <li>Вставьте токен выше</li>
+        <li>Введи ID группы куда постить</li>
+        <li>Нажми <strong>«Подключить через VK»</strong></li>
+        <li>Авторизуйся как <strong>администратор</strong> группы</li>
       </ol>
       <br>
-      <strong>ID группы:</strong> отрицательное число. URL <code>club123456</code> → ID = <code>-123456</code>
+      <strong>ID группы:</strong> URL <code>club123456</code> → ID = <code>-123456</code> (с минусом)
+      <br><br>
+      ⚠️ Нужен аккаунт с правами <strong>администратора</strong> группы.<br>
+      ⚠️ Требуется <code>VK_APP_ID</code> в переменных окружения сервера.
     `
   },
   ok: {
@@ -551,6 +555,7 @@ function openConnect(platform) {
 
   const saveBtn = document.querySelector('#connectModal .modal-actions .btn-primary');
   const oauthLabels = {
+    vk: '🔗 Подключить через VK',
     ok: '🔗 Подключить через OK',
     facebook: '🔗 Подключить через Facebook',
     twitter: '🔗 Подключить через X (Twitter)',
