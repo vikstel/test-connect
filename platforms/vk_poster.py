@@ -78,14 +78,13 @@ class VKPoster(BasePlatform):
     def post(self, text: str, media_path: str = None, media_type: str = None) -> dict:
         try:
             attachments = []
-            photo_skipped = None
 
             if media_path and media_type == "photo":
                 try:
                     attachment = self._upload_photo(media_path)
                     attachments.append(attachment)
                 except Exception as e:
-                    photo_skipped = str(e)
+                    return {"ok": False, "message": f"Ошибка загрузки фото: {e}"}
 
             params = dict(
                 owner_id=self.owner_id,
@@ -101,7 +100,6 @@ class VKPoster(BasePlatform):
                 err = result["error"]
                 return {"ok": False, "message": f"[{err.get('error_code')}] {err.get('error_msg')}"}
 
-            msg = "Опубликовано" + (f" (фото пропущено: {photo_skipped})" if photo_skipped else "")
-            return {"ok": True, "post_id": str(result["response"]["post_id"]), "message": msg}
+            return {"ok": True, "post_id": str(result["response"]["post_id"]), "message": "Опубликовано"}
         except Exception as e:
             return {"ok": False, "message": str(e)}
