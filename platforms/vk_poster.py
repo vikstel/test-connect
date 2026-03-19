@@ -92,8 +92,9 @@ class VKPoster(BasePlatform):
                 message=text,  # текст + эмодзи — Unicode, VK принимает нативно
                 attachments=",".join(attachments),
             )
-            # from_group НЕ передаём — user token постит от имени пользователя на стену группы.
-            # from_group=1 требует прав администратора И вызывает [1051] при user token.
+            # from_group=1 — публикуем от имени сообщества (community token)
+            if self.owner_id < 0:
+                params["from_group"] = 1
 
             result = self._call("wall.post", **params)
             if "error" in result:
