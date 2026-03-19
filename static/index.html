@@ -302,24 +302,20 @@ const PLATFORMS = {
     name: "VKontakte",
     icon: "🔵",
     color: "#4a76a8",
-    oauthUrl: "/oauth/vk",
-    oauthParamName: "target_id",
     fields: [
+      { key: "access_token", label: "Community Token", placeholder: "vk1.a.xxxxx" },
       { key: "target_id", label: "ID группы/паблика (куда постить)", placeholder: "-123456789" },
     ],
     instruction: `
-      <strong>Как подключить (текст + фото + эмодзи):</strong>
+      <strong>Получить Community Token:</strong>
       <ol>
-        <li>Введи ID группы куда постить</li>
-        <li>Нажми <strong>«Подключить через VK»</strong></li>
-        <li>Авторизуйся как администратор группы</li>
+        <li>Открой страницу группы → <strong>Управление → Настройки → Работа с API</strong></li>
+        <li>Нажми <strong>«Создать ключ»</strong></li>
+        <li>Отметь ✅ <strong>Стена</strong> + ✅ <strong>Фотографии</strong> (обе галочки!)</li>
+        <li>Скопируй токен и вставь выше</li>
       </ol>
       <br>
       <strong>ID группы:</strong> URL <code>club123456</code> → ID = <code>-123456</code> (с минусом)
-      <br><br>
-      ⚠️ Scope запрашивается: <code>wall, photos, offline</code><br>
-      ⚠️ В настройках Standalone app добавь Redirect URI:<br>
-      <code>${window.location.origin}/oauth/vk/callback</code>
     `
   },
   ok: {
@@ -556,7 +552,6 @@ function openConnect(platform) {
 
   const saveBtn = document.querySelector('#connectModal .modal-actions .btn-primary');
   const oauthLabels = {
-    vk: '🔗 Подключить через VK',
     ok: '🔗 Подключить через OK',
     facebook: '🔗 Подключить через Facebook',
     twitter: '🔗 Подключить через X (Twitter)',
