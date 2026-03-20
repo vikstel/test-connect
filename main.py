@@ -36,11 +36,10 @@ PLATFORM_MAP = {
     "zen": ("platforms.zen_poster", "ZenPoster"),
 }
 
-VK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/vk/callback"
+VK_REDIRECT_URI = os.getenv("VK_REDIRECT_URI", "https://test-connect-production-2101.up.railway.app/oauth/vk/callback")
 OK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/ok/callback"
 TWITTER_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/twitter/callback"
 FACEBOOK_REDIRECT_URI = "https://test-connect-production-2101.up.railway.app/oauth/facebook/callback"
-VK_SCOPE = "90116"  # wall(8192) + photos(4) + video(16384) + offline(65536)
 
 
 def get_poster(platform: str):
@@ -50,6 +49,18 @@ def get_poster(platform: str):
     module_path, class_name = PLATFORM_MAP[platform]
     import importlib
     module = importlib.import_module(module_path)
+
+    # Для VK добавляем callback для автосохранения обновлённого токена
+    if platform == "vk":
+        def on_vk_token_refreshed(access_token: str, refresh_token: str, expires_in: int):
+            """Сохраняет новый токен после автоматического refresh."""
+            updated_cfg = get_platform_config("vk")
+            updated_cfg["access_token"] = access_token
+            updated_cfg["refresh_token"] = refresh_token
+            save_platform("vk", updated_cfg)
+
+        cfg = {**cfg, "on_token_refreshed": on_vk_token_refreshed}
+
     return getattr(module, class_name)(**cfg)
 
 
@@ -149,96 +160,87 @@ def delete_job(job_id: str):
     return {"ok": cancel_job(job_id)}
 
 
-# ─── VK OAuth (Implicit Flow через oauth.vk.com) ─────────────────
-# VK ID OAuth 2.1 (id.vk.ru) даёт токен который НЕ работает с wall.post [1051].
-# Standalone Implicit Flow (oauth.vk.com) даёт токен поддерживающий wall.post + photos.
+# ─── VK OAuth 2.1 + PKCE (id.vk.com) ────────────────────────────
+# Используем VK ID OAuth 2.1 с PKCE — даёт access_token + refresh_token.
+# state/code_verifier сохраняем в файл (как ok_state.json), сессий нет.
+
+_VK_PKCE_FILE = Path("vk_pkce.json")
+
+
+def _vk_pkce_save(state: str, code_verifier: str, target_id: str = ""):
+    """Сохраняем PKCE-данные и target_id по ключу state."""
+    data = {}
+    if _VK_PKCE_FILE.exists():
+        data = json.loads(_VK_PKCE_FILE.read_text())
+    data[state] = {"code_verifier": code_verifier, "target_id": target_id}
+    _VK_PKCE_FILE.write_text(json.dumps(data))
+
+
+def _vk_pkce_pop(state: str) -> dict:
+    """Извлекаем и удаляем PKCE-данные по state."""
+    if not _VK_PKCE_FILE.exists():
+        return {}
+    data = json.loads(_VK_PKCE_FILE.read_text())
+    entry = data.pop(state, {})
+    _VK_PKCE_FILE.write_text(json.dumps(data))
+    return entry
+
 
 @app.get("/oauth/vk")
 def vk_oauth_start(target_id: str = ""):
-    """Редирект на VK Implicit Flow. target_id передаётся через state."""
+    """Редирект на VK ID OAuth 2.1 с PKCE. target_id сохраняется вместе с code_verifier."""
+    from platforms.vk_auth_service import get_authorization_url
     app_id = os.getenv("VK_APP_ID")
     if not app_id:
         return JSONResponse({"error": "VK_APP_ID не найден в .env"}, status_code=400)
-    from urllib.parse import urlencode, quote
-    # state кодируем как "target_id:random" чтобы передать target_id через VK state
-    random_part = secrets.token_urlsafe(16)
-    state = f"{quote(target_id, safe='')}:{random_part}"
-    params = urlencode({
-        "client_id": app_id,
-        "display": "page",
-        "redirect_uri": VK_REDIRECT_URI,
-        "scope": "wall,photos,offline",
-        "response_type": "token",   # Implicit Flow — токен приходит в URL-фрагменте
-        "v": "5.131",
-        "state": state,
-    })
-    return RedirectResponse(f"https://oauth.vk.com/authorize?{params}")
+
+    auth_data = get_authorization_url()
+    # Сохраняем code_verifier и target_id для проверки в callback
+    _vk_pkce_save(auth_data["state"], auth_data["code_verifier"], target_id)
+
+    return RedirectResponse(auth_data["url"])
 
 
 @app.get("/oauth/vk/callback")
-def vk_oauth_callback_page():
+def vk_oauth_callback(code: str = None, state: str = None, device_id: str = "", error: str = None):
     """
-    Callback-страница для Implicit Flow.
-    Токен приходит в URL-фрагменте (#access_token=...) — браузер его видит, сервер нет.
-    Страница читает фрагмент через JS и сохраняет токен через /api/vk/save-token.
+    Callback от VK ID OAuth 2.1.
+    VK передаёт ?code=...&state=...&device_id=... (Authorization Code Flow).
     """
-    html = """<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><title>VK Auth</title></head>
-<body>
-<script>
-(function() {
-  var hash = location.hash.substring(1);
-  var params = {};
-  hash.split('&').forEach(function(p) {
-    var kv = p.split('=');
-    params[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || '');
-  });
+    from platforms.vk_auth_service import exchange_code_for_token, get_user_info
 
-  var token = params['access_token'];
-  var state = params['state'] || '';
-  // state формат: "target_id:random"
-  var parts = state.split(':');
-  var targetId = parts[0] || '';
+    # Обработка ошибки от VK
+    if error:
+        return RedirectResponse(f"/?vk_error={error}")
 
-  if (!token) {
-    location.href = '/?vk_error=' + encodeURIComponent(params['error_description'] || params['error'] || 'no_token');
-    return;
-  }
+    if not code:
+        return RedirectResponse("/?vk_error=no_code")
 
-  fetch('/api/vk/save-token', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({access_token: token, target_id: targetId})
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (d.ok) location.href = '/?vk_connected=1';
-    else location.href = '/?vk_error=' + encodeURIComponent(d.message || 'save_error');
-  })
-  .catch(function() { location.href = '/?vk_error=fetch_error'; });
-})();
-</script>
-<p>Авторизация VK...</p>
-</body>
-</html>"""
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(html)
+    # Извлекаем сохранённые данные PKCE
+    pkce_data = _vk_pkce_pop(state) if state else {}
+    if not pkce_data:
+        return RedirectResponse("/?vk_error=invalid_state")
 
+    code_verifier = pkce_data.get("code_verifier", "")
+    target_id = pkce_data.get("target_id", "")
 
-@app.post("/api/vk/save-token")
-async def vk_save_token(request: Request):
-    """Сохраняет VK Implicit Flow токен + target_id"""
-    data = await request.json()
-    token = data.get("access_token")
-    target_id = data.get("target_id", "")
-    if not token:
-        return JSONResponse({"ok": False, "message": "Нет токена"}, status_code=400)
-    vk_cfg = {"access_token": token}
+    # Обмениваем code на токен
+    result = exchange_code_for_token(code, code_verifier, device_id)
+
+    if not result["ok"]:
+        err = result.get("error", "token_error")
+        return RedirectResponse(f"/?vk_error={err}")
+
+    # Сохраняем токены в credentials.json
+    vk_cfg = {
+        "access_token": result["access_token"],
+        "refresh_token": result.get("refresh_token", ""),
+    }
     if target_id:
         vk_cfg["target_id"] = target_id
+
     save_platform("vk", vk_cfg)
-    return {"ok": True}
+    return RedirectResponse("/?vk_connected=1")
 
 
 # ─── OK OAuth ────────────────────────────────────────────────────
